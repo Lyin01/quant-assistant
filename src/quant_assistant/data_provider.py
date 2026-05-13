@@ -208,8 +208,8 @@ def _infer_secid(code: object, requested_secids: str) -> str:
 
 def _code_from_secid(secid: str) -> str:
     if "." in secid:
-        return secid.split(".", 1)[1]
-    return secid
+        return _normalize_code(secid.split(".", 1)[1])
+    return _normalize_code(secid)
 
 
 def _quotes_from_frame(frame: Any, codes: dict[str, str]) -> dict[str, Quote]:
@@ -228,7 +228,7 @@ def _quotes_from_frame(frame: Any, codes: dict[str, str]) -> dict[str, Quote]:
     now = datetime.now(CHINA_TZ).strftime("%Y-%m-%d %H:%M:%S")
     quotes: dict[str, Quote] = {}
     for _index, row in frame.iterrows():
-        code = str(row.get(code_column, "")).zfill(6)
+        code = _normalize_code(row.get(code_column, ""))
         secid = codes.get(code)
         if not secid:
             continue
@@ -251,3 +251,11 @@ def _first_existing_column(frame: Any, names: list[str]) -> str | None:
         if name in columns:
             return name
     return None
+
+
+def _normalize_code(value: object) -> str:
+    text = str(value).strip()
+    digits = "".join(character for character in text if character.isdigit())
+    if digits:
+        return digits[-6:].zfill(6)
+    return text.zfill(6)
