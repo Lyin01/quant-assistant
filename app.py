@@ -19,6 +19,7 @@ from quant_assistant.data_provider import build_provider, collect_secids, quote_
 from quant_assistant.importer import (
     dataframe_to_positions,
     normalize_import_table,
+    parse_ocr_positions,
     read_uploaded_table,
     template_frame,
 )
@@ -273,7 +274,22 @@ elif page == "导入持仓":
     image_file = st.file_uploader("上传截图 JPG / PNG", type=["jpg", "jpeg", "png"])
     if image_file is not None:
         st.image(image_file, caption="截图预览", use_container_width=True)
-        st.info("当前版本先支持截图留档和手动录入。OCR 需要额外服务或模型，后续单独接入。")
+        st.caption("图片 OCR 结果会受券商页面排版影响。可先用手机/微信识别图片文字，再粘贴到下面解析。")
+
+    ocr_text = st.text_area("粘贴截图 OCR 文本", height=160, placeholder="示例：半导体 200.30 100 2.003 -6.80 -3.28%")
+    if st.button("解析截图文本") and ocr_text.strip():
+        parsed = parse_ocr_positions(ocr_text)
+        parsed_positions = dataframe_to_positions(parsed)
+        if parsed.empty:
+            st.warning("未识别到持仓行。建议保留：名称、市值、持股、现价、成本、盈亏率。")
+        else:
+            st.dataframe(parsed, use_container_width=True, hide_index=True)
+            st.download_button(
+                "下载截图解析 JSON",
+                json.dumps(parsed_positions, ensure_ascii=False, indent=2).encode("utf-8"),
+                file_name="screenshot-positions.json",
+                mime="application/json",
+            )
 
     with st.form("manual_position"):
         st.caption("截图无法自动识别时，可以先手动录入关键仓位。")

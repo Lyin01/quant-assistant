@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from io import BytesIO
 from typing import Any
 
@@ -73,6 +74,27 @@ def dataframe_to_positions(frame: pd.DataFrame) -> list[dict[str, Any]]:
     return positions
 
 
+def parse_ocr_positions(text: str) -> pd.DataFrame:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    rows: list[dict[str, Any]] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        name = _name_from_line(line)
+        numbers = _numbers_from_line(line)
+
+        if name and numbers:
+            rows.append(_position_row(name, numbers, line))
+        elif name and index + 1 < len(lines):
+            next_numbers = _numbers_from_line(lines[index + 1])
+            if next_numbers:
+                rows.append(_position_row(name, next_numbers, f"{line} {lines[index + 1]}"))
+                index += 1
+        index += 1
+
+    return pd.DataFrame(rows, columns=PORTFOLIO_COLUMNS)
+
+
 def template_frame() -> pd.DataFrame:
     return pd.DataFrame(
         [
@@ -103,3 +125,76 @@ def _clean(value: object) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _name_from_line(line: str) -> str | None:
+    cleaned = re.sub(r"[：:|,，]+", " ", line).strip()
+    tokens = cleaned.split()
+    if not tokens:
+        return None
+
+    name_parts = []
+    for token in tokens:
+        if _numbers_from_line(token):
+            break
+        if re.search(r"[\u4e00-\u9fffA-Za-z]", token):
+            name_parts.append(token)
+    name = "".join(name_parts).strip()
+    if not name or name in {"名称", "持仓", "市值", "现价", "成本", "持仓盈亏", "今日盈亏"}:
+        return None
+    return name[:40]
+
+
+def _numbers_from_line(line: str) -> list[float]:
+    values = []
+    for match in re.finditer(r"[-+]?\d+(?:,\d{3})*(?:\.\d+)?%?", line):
+        raw = match.group(0).replace(",", "").replace("%", "")
+        try:
+            values.append(float(raw))
+        except ValueError:
+            continue
+    return values
+
+
+def _position_row(name: str, numbers: list[float], source: str) -> dict[str, Any]:
+    row = {column: None for column in PORTFOLIO_COLUMNS}
+    row["name"] = name
+    row["tag"] = _infer_tag(name)
+    row["market_value"] = numbers[0] if numbers else None
+
+    if len(numbers) >= 2 and _looks_like_shares(source):
+        row["shares"] = numbers[1]
+    if len(numbers) >= 3 and _looks_like_price_cost(source):
+        row["price"] = numbers[2]
+    if len(numbers) >= 4 and _looks_like_price_cost(source):
+        row["cost"] = numbers[3]
+
+    percent_values = re.findall(r"[-+]?\d+(?:\.\d+)?%", source)
+    if percent_values:
+        row["holding_pnl_pct"] = float(percent_values[-1].replace("%", ""))
+    elif len(numbers) >= 2 and abs(numbers[-1]) <= 100:
+        row["holding_pnl_pct"] = numbers[-1]
+    return row
+
+
+def _infer_tag(name: str) -> str:
+    rules = [
+        ("wide_index", ["中证500", "A500", "沪深300", "宽基", "标普500"]),
+        ("tactical_ai", ["人工智能", "AI"]),
+        ("power_grid", ["电网"]),
+        ("military", ["军工"]),
+        ("semiconductor", ["半导体", "芯片"]),
+        ("robot", ["机器人"]),
+    ]
+    for tag, keywords in rules:
+        if any(keyword in name for keyword in keywords):
+            return tag
+    return "imported"
+
+
+def _looks_like_shares(source: str) -> bool:
+    return any(keyword in source for keyword in ["持股", "股", "可卖", "份额", "数量"])
+
+
+def _looks_like_price_cost(source: str) -> bool:
+    return any(keyword in source for keyword in ["现价", "成本", "价格"])

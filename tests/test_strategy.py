@@ -1,6 +1,7 @@
 from quant_assistant.config import load_json
 from quant_assistant.strategy import generate_recommendations
 from quant_assistant.analytics import action_list, add_indicators, backtest_ma_trend, latest_signal
+from quant_assistant.importer import parse_ocr_positions
 import pandas as pd
 
 
@@ -38,3 +39,17 @@ def test_analytics_pipeline():
     assert not curve.empty
     assert "strategy_return_pct" in metrics
     assert len(actions) == 1
+
+
+def test_parse_ocr_positions():
+    frame = parse_ocr_positions(
+        """
+        半导体 200.30 100 2.003 -6.80 -3.28%
+        机器人 341.10 300 1.137 +31.70 +10.25%
+        """
+    )
+
+    assert list(frame["name"]) == ["半导体", "机器人"]
+    assert list(frame["tag"]) == ["semiconductor", "robot"]
+    assert frame.loc[0, "market_value"] == 200.30
+    assert frame.loc[1, "holding_pnl_pct"] == 10.25
