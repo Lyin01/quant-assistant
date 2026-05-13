@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import sys
 import json
+import sys
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -27,20 +27,20 @@ from quant_assistant.strategy import generate_recommendations
 
 
 st.set_page_config(page_title="Quant Assistant", layout="wide")
-st.title("量化助手")
-st.caption("本地半自动复盘助手。只生成建议，不自动真实下单。")
 
 config = load_json(ROOT / "config.json")
 portfolio = load_json(ROOT / "portfolio.json")
-
-provider = build_provider(config)
-secids = collect_secids(config, portfolio)
-quotes, quote_messages = provider.get_quotes_with_status(secids)
-recs = generate_recommendations(config, portfolio, quotes)
-
 fund = portfolio["accounts"]["fund"]
 stock = portfolio["accounts"]["stock"]
 options = instrument_options(config)
+recs = generate_recommendations(config, portfolio, quotes={})
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def cached_quotes(config_data: dict, portfolio_data: dict):
+    provider = build_provider(config_data)
+    secids = collect_secids(config_data, portfolio_data)
+    return provider.get_quotes_with_status(secids)
 
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -101,11 +101,20 @@ def _fmt(value: object, suffix: str = "") -> str:
         return "-"
 
 
-overview_tab, history_tab, signal_tab, backtest_tab, import_tab = st.tabs(
-    ["总览", "历史 K 线", "信号 / ETF 排行", "回测", "导入持仓"]
+def _title() -> None:
+    st.title("量化助手")
+    st.caption("本地半自动复盘助手。只生成建议，不自动真实下单。")
+
+
+page = st.sidebar.radio(
+    "功能",
+    ["总览", "历史 K 线", "信号 / ETF 排行", "回测", "导入持仓"],
+    index=0,
 )
 
-with overview_tab:
+_title()
+
+if page == "总览":
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("基金资产", f'{fund["total_assets"]:,.2f}', f'{fund["today_pnl"]:,.2f}')
     col2.metric("股票资产", f'{stock["total_assets"]:,.2f}', f'{stock["today_pnl"]:,.2f}')
@@ -125,25 +134,26 @@ with overview_tab:
             mime="text/csv",
         )
 
-    st.subheader("完整建议")
-    for rec in recs:
-        st.write(f'**{rec["action"]}** `{rec["instrument"]}` `{rec["amount"]}`')
-        st.caption(rec["reason"])
+    with st.expander("完整建议"):
+        for rec in recs:
+            st.write(f'**{rec["action"]}** `{rec["instrument"]}` `{rec["amount"]}`')
+            st.caption(rec["reason"])
 
     st.subheader("行情快照")
     st.caption(quote_status(config))
-    if quotes:
-        st.dataframe(_quote_frame(quotes), use_container_width=True, hide_index=True)
-        with st.expander("行情源状态"):
-            for message in quote_messages:
-                st.write(message)
-    else:
-        st.warning("未获取到实时行情，将使用 portfolio.json 里的 last_daily_pct。")
-        with st.expander("查看行情源错误"):
+    load_quotes = st.button("刷新实时行情", type="primary")
+    if load_quotes:
+        with st.spinner("正在获取 AkShare / 东方财富行情..."):
+            quotes, quote_messages = cached_quotes(config, portfolio)
+        if quotes:
+            st.dataframe(_quote_frame(quotes), use_container_width=True, hide_index=True)
+        else:
+            st.warning("未获取到实时行情，将使用 portfolio.json 里的 last_daily_pct。")
+        with st.expander("行情源状态", expanded=not bool(quotes)):
             for message in quote_messages:
                 st.write(message)
 
-with history_tab:
+elif page == "历史 K 线":
     st.subheader("历史 K 线")
     name = st.selectbox("标的", list(options.keys()), index=0)
     col1, col2, col3 = st.columns(3)
@@ -151,51 +161,55 @@ with history_tab:
     end_date = col2.date_input("结束日期", date.today())
     adjust = col3.selectbox("复权", ["qfq", "hfq", ""], index=0, format_func=lambda item: item or "不复权")
 
-    history, messages = cached_history(options[name], start_date.isoformat(), end_date.isoformat(), adjust)
-    if history.empty:
-        st.warning("未获取到历史 K 线。")
-        for message in messages:
-            st.write(message)
-    else:
-        enriched = add_indicators(history)
-        st.plotly_chart(_kline_figure(enriched, name), use_container_width=True)
-        st.dataframe(enriched.tail(120), use_container_width=True, hide_index=True)
-        with st.expander("历史数据源状态"):
+    if st.button("加载 K 线", type="primary"):
+        with st.spinner("正在获取历史 K 线..."):
+            history, messages = cached_history(options[name], start_date.isoformat(), end_date.isoformat(), adjust)
+        if history.empty:
+            st.warning("未获取到历史 K 线。")
+        else:
+            enriched = add_indicators(history)
+            st.plotly_chart(_kline_figure(enriched, name), use_container_width=True)
+            st.dataframe(enriched.tail(120), use_container_width=True, hide_index=True)
+        with st.expander("历史数据源状态", expanded=history.empty):
             for message in messages:
                 st.write(message)
 
-with signal_tab:
+elif page == "信号 / ETF 排行":
     st.subheader("均线 / 回撤信号")
     signal_name = st.selectbox("信号标的", list(options.keys()), index=min(1, len(options) - 1))
-    signal_history, signal_messages = cached_history(
-        options[signal_name],
-        (date.today() - timedelta(days=540)).isoformat(),
-        date.today().isoformat(),
-        "qfq",
-    )
-    signal = latest_signal(signal_history)
-    sig_col1, sig_col2, sig_col3, sig_col4 = st.columns(4)
-    sig_col1.metric("信号", signal.get("signal", "-"))
-    sig_col2.metric("收盘", _fmt(signal.get("close")))
-    sig_col3.metric("MA20", _fmt(signal.get("ma20")))
-    sig_col4.metric("20日回撤", _fmt(signal.get("drawdown_20_pct"), suffix="%"))
-    st.caption(signal.get("reason", ""))
-    with st.expander("信号数据源状态"):
-        for message in signal_messages:
-            st.write(message)
+    if st.button("生成信号", type="primary"):
+        with st.spinner("正在计算均线和回撤..."):
+            signal_history, signal_messages = cached_history(
+                options[signal_name],
+                (date.today() - timedelta(days=540)).isoformat(),
+                date.today().isoformat(),
+                "qfq",
+            )
+        signal = latest_signal(signal_history)
+        sig_col1, sig_col2, sig_col3, sig_col4 = st.columns(4)
+        sig_col1.metric("信号", signal.get("signal", "-"))
+        sig_col2.metric("收盘", _fmt(signal.get("close")))
+        sig_col3.metric("MA20", _fmt(signal.get("ma20")))
+        sig_col4.metric("20日回撤", _fmt(signal.get("drawdown_20_pct"), suffix="%"))
+        st.caption(signal.get("reason", ""))
+        with st.expander("信号数据源状态", expanded=signal_history.empty):
+            for message in signal_messages:
+                st.write(message)
 
     st.subheader("ETF 涨跌排行")
     ranking_limit = st.slider("排行数量", 10, 100, 30, step=10)
-    ranking, ranking_messages = cached_etf_ranking(ranking_limit)
-    if ranking.empty:
-        st.warning("未获取到 ETF 排行。")
-    else:
-        st.dataframe(ranking, use_container_width=True, hide_index=True)
-    with st.expander("排行数据源状态"):
-        for message in ranking_messages:
-            st.write(message)
+    if st.button("加载 ETF 排行"):
+        with st.spinner("正在获取 ETF 排行..."):
+            ranking, ranking_messages = cached_etf_ranking(ranking_limit)
+        if ranking.empty:
+            st.warning("未获取到 ETF 排行。")
+        else:
+            st.dataframe(ranking, use_container_width=True, hide_index=True)
+        with st.expander("排行数据源状态", expanded=ranking.empty):
+            for message in ranking_messages:
+                st.write(message)
 
-with backtest_tab:
+elif page == "回测":
     st.subheader("回测模块")
     bt_name = st.selectbox("回测标的", list(options.keys()), index=0)
     bt_col1, bt_col2, bt_col3, bt_col4 = st.columns(4)
@@ -204,23 +218,25 @@ with backtest_tab:
     fast = bt_col3.number_input("快线 MA", min_value=5, max_value=120, value=20, step=5)
     slow = bt_col4.number_input("慢线 MA", min_value=20, max_value=250, value=60, step=10)
 
-    bt_history, bt_messages = cached_history(options[bt_name], bt_start.isoformat(), bt_end.isoformat(), "qfq")
-    bt_curve, metrics = backtest_ma_trend(bt_history, int(fast), int(slow))
-    if bt_curve.empty:
-        st.warning("历史数据不足，无法回测。")
-    else:
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("策略收益", _fmt(metrics.get("strategy_return_pct"), "%"))
-        m2.metric("持有收益", _fmt(metrics.get("buy_hold_return_pct"), "%"))
-        m3.metric("最大回撤", _fmt(metrics.get("max_drawdown_pct"), "%"))
-        m4.metric("交易次数", f'{metrics.get("trades", 0):.0f}')
-        st.line_chart(bt_curve.set_index("date")[["equity", "buy_hold"]])
-        st.dataframe(bt_curve.tail(120), use_container_width=True, hide_index=True)
-    with st.expander("回测数据源状态"):
-        for message in bt_messages:
-            st.write(message)
+    if st.button("运行回测", type="primary"):
+        with st.spinner("正在获取历史数据并回测..."):
+            bt_history, bt_messages = cached_history(options[bt_name], bt_start.isoformat(), bt_end.isoformat(), "qfq")
+            bt_curve, metrics = backtest_ma_trend(bt_history, int(fast), int(slow))
+        if bt_curve.empty:
+            st.warning("历史数据不足，无法回测。")
+        else:
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("策略收益", _fmt(metrics.get("strategy_return_pct"), "%"))
+            m2.metric("持有收益", _fmt(metrics.get("buy_hold_return_pct"), "%"))
+            m3.metric("最大回撤", _fmt(metrics.get("max_drawdown_pct"), "%"))
+            m4.metric("交易次数", f'{metrics.get("trades", 0):.0f}')
+            st.line_chart(bt_curve.set_index("date")[["equity", "buy_hold"]])
+            st.dataframe(bt_curve.tail(120), use_container_width=True, hide_index=True)
+        with st.expander("回测数据源状态", expanded=bt_curve.empty):
+            for message in bt_messages:
+                st.write(message)
 
-with import_tab:
+elif page == "导入持仓":
     st.subheader("从表格导入持仓")
     template = template_frame()
     st.download_button(
