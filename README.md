@@ -3,6 +3,7 @@
 本项目是本地半自动量化复盘助手。它不会自动真实下单，只负责：
 
 - 拉取行情
+- 支持 AkShare / 东方财富行情源
 - 读取持仓和资金配置
 - 按配置里的交易纪律生成买卖建议
 - 保存复盘日志
@@ -29,7 +30,7 @@ pip install -r requirements.txt
 - `config.json`：策略参数、现金分配、行情代码。
 - `portfolio.json`：当前持仓快照。
 - `src/quant_assistant/strategy.py`：核心规则。
-- `src/quant_assistant/data_provider.py`：东方财富行情抓取。
+- `src/quant_assistant/data_provider.py`：AkShare / 东方财富行情抓取。
 - `src/quant_assistant/cli.py`：命令行入口。
 - `app.py`：Streamlit 本地页面。
 - `data/journal.csv`：运行后自动生成的复盘日志。
@@ -47,10 +48,13 @@ pip install -r requirements.txt
 默认配置为：
 
 ```json
+"name": "auto",
 "use_live_proxy_for_decisions": false
 ```
 
-原因：基金页面的“关联板块”与可拉取 ETF 代理行情可能不同步。默认用 `portfolio.json` 里的 `last_daily_pct` 作为交易决策口径，实时行情只用于看盘参考。确认代理代码完全匹配后，可以把该项改为 `true`。
+`auto` 会先尝试 AkShare，失败后回退到东方财富直连。
+
+原因：基金页面的“关联板块”与可拉取 ETF 代理行情可能不同步。默认用 `portfolio.json` 里的 `last_daily_pct` 作为交易决策口径，实时行情只用于看盘参考。确认代理代码完全匹配后，可以把 `use_live_proxy_for_decisions` 改为 `true`。
 
 ## 风险边界
 

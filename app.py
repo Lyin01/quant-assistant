@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from quant_assistant.config import load_json
-from quant_assistant.data_provider import EastMoneyProvider, collect_secids
+from quant_assistant.data_provider import build_provider, collect_secids, quote_status
 from quant_assistant.strategy import generate_recommendations
 
 
@@ -21,9 +21,9 @@ st.caption("本地半自动复盘助手。只生成建议，不自动真实下�
 config = load_json(ROOT / "config.json")
 portfolio = load_json(ROOT / "portfolio.json")
 
-provider = EastMoneyProvider(timeout=config["market_provider"]["timeout_seconds"])
+provider = build_provider(config)
 secids = collect_secids(config, portfolio)
-quotes = provider.get_quotes(secids)
+quotes, quote_messages = provider.get_quotes_with_status(secids)
 
 recs = generate_recommendations(config, portfolio, quotes)
 
@@ -45,6 +45,7 @@ else:
         st.caption(rec["reason"])
 
 st.subheader("行情快照")
+st.caption(quote_status(config))
 if quotes:
     st.dataframe(
         [
@@ -59,5 +60,11 @@ if quotes:
         ],
         use_container_width=True,
     )
+    with st.expander("行情源状态"):
+        for message in quote_messages:
+            st.write(message)
 else:
     st.warning("未获取到实时行情，将使用 portfolio.json 里的 last_daily_pct。")
+    with st.expander("查看行情源错误"):
+        for message in quote_messages:
+            st.write(message)

@@ -27,8 +27,12 @@ class EastMoneyProvider:
         self.timeout = timeout
 
     def get_quotes(self, secids: list[str]) -> dict[str, Quote]:
+        quotes, _messages = self.get_quotes_with_status(secids)
+        return quotes
+
+    def get_quotes_with_status(self, secids: list[str]) -> tuple[dict[str, Quote], list[str]]:
         if not secids:
-            return {}
+            return {}, ["EastMoney: no secids requested."]
 
         params = {
             "fltt": "2",
@@ -36,15 +40,24 @@ class EastMoneyProvider:
             "fields": "f12,f14,f2,f3,f4,f124",
         }
         url = "https://push2.eastmoney.com/api/qt/ulist.np/get?" + urllib.parse.urlencode(params)
-        request = urllib.request.Request(url, headers={"Referer": "https://quote.eastmoney.com/"})
+        request = urllib.request.Request(
+            url,
+            headers={
+                "Referer": "https://quote.eastmoney.com/",
+                "User-Agent": "Mozilla/5.0 QuantAssistant/1.0",
+            },
+        )
 
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 payload = json.loads(response.read().decode("utf-8"))
-        except Exception:
-            return {}
+        except Exception as exc:
+            return {}, [f"EastMoney: request failed: {exc}"]
 
         rows = payload.get("data", {}).get("diff") or []
+        if not rows:
+            return {}, ["EastMoney: response contained no quote rows."]
+
         quotes: dict[str, Quote] = {}
         for row in rows:
             secid = _infer_secid(row.get("f12"), params["secids"])
@@ -63,7 +76,82 @@ class EastMoneyProvider:
                 time_text=time_text,
             )
             quotes[secid] = quote
+        return quotes, [f"EastMoney: loaded {len(quotes)} quotes."]
+
+
+class AkShareProvider:
+    def get_quotes(self, secids: list[str]) -> dict[str, Quote]:
+        quotes, _messages = self.get_quotes_with_status(secids)
         return quotes
+
+    def get_quotes_with_status(self, secids: list[str]) -> tuple[dict[str, Quote], list[str]]:
+        if not secids:
+            return {}, ["AkShare: no secids requested."]
+
+        try:
+            import akshare as ak
+        except Exception as exc:
+            return {}, [f"AkShare: import failed: {exc}"]
+
+        codes = {_code_from_secid(secid): secid for secid in secids}
+        quotes: dict[str, Quote] = {}
+        messages: list[str] = []
+
+        fetchers = [
+            ("AkShare index", ak.stock_zh_index_spot_em),
+            ("AkShare ETF", ak.fund_etf_spot_em),
+        ]
+
+        for label, fetcher in fetchers:
+            try:
+                frame = fetcher()
+            except Exception as exc:
+                messages.append(f"{label}: request failed: {exc}")
+                continue
+
+            loaded = _quotes_from_frame(frame, codes)
+            quotes.update(loaded)
+            messages.append(f"{label}: loaded {len(loaded)} matching quotes.")
+
+        if not quotes:
+            messages.append("AkShare: no matching quote rows.")
+        return quotes, messages
+
+
+class AutoProvider:
+    def __init__(self, timeout: int = 8) -> None:
+        self.akshare = AkShareProvider()
+        self.eastmoney = EastMoneyProvider(timeout=timeout)
+
+    def get_quotes(self, secids: list[str]) -> dict[str, Quote]:
+        quotes, _messages = self.get_quotes_with_status(secids)
+        return quotes
+
+    def get_quotes_with_status(self, secids: list[str]) -> tuple[dict[str, Quote], list[str]]:
+        quotes, messages = self.akshare.get_quotes_with_status(secids)
+        missing_secids = sorted(set(secids) - set(quotes))
+        if quotes and not missing_secids:
+            return quotes, messages
+
+        if quotes and missing_secids:
+            fallback_quotes, fallback_messages = self.eastmoney.get_quotes_with_status(missing_secids)
+            quotes.update(fallback_quotes)
+            return quotes, messages + fallback_messages
+
+        fallback_quotes, fallback_messages = self.eastmoney.get_quotes_with_status(secids)
+        return fallback_quotes, messages + fallback_messages
+
+
+def build_provider(config: dict[str, Any]) -> AutoProvider | AkShareProvider | EastMoneyProvider:
+    provider_config = config.get("market_provider", {})
+    name = str(provider_config.get("name", "auto")).lower()
+    timeout = int(provider_config.get("timeout_seconds", 8))
+
+    if name == "akshare":
+        return AkShareProvider()
+    if name == "eastmoney":
+        return EastMoneyProvider(timeout=timeout)
+    return AutoProvider(timeout=timeout)
 
 
 def collect_secids(config: dict[str, Any], portfolio: dict[str, Any]) -> list[str]:
@@ -93,11 +181,19 @@ def quote_for_proxy(
     return quotes.get(secid)
 
 
+def quote_status(config: dict[str, Any]) -> str:
+    provider_name = config.get("market_provider", {}).get("name", "auto")
+    decision_mode = config.get("market_provider", {}).get("use_live_proxy_for_decisions", False)
+    mode = "实时行情参与策略判断" if decision_mode else "实时行情仅展示，策略按持仓快照判断"
+    return f"行情源: {provider_name}; {mode}."
+
+
 def _num(value: object) -> float | None:
     if value in (None, "-", ""):
         return None
     try:
-        return float(value)
+        cleaned = str(value).replace("%", "").replace(",", "").strip()
+        return float(cleaned)
     except (TypeError, ValueError):
         return None
 
@@ -108,3 +204,50 @@ def _infer_secid(code: object, requested_secids: str) -> str:
         if secid.endswith("." + code_text):
             return secid
     return code_text
+
+
+def _code_from_secid(secid: str) -> str:
+    if "." in secid:
+        return secid.split(".", 1)[1]
+    return secid
+
+
+def _quotes_from_frame(frame: Any, codes: dict[str, str]) -> dict[str, Quote]:
+    if frame is None or getattr(frame, "empty", True):
+        return {}
+
+    code_column = _first_existing_column(frame, ["代码", "code", "symbol"])
+    name_column = _first_existing_column(frame, ["名称", "name"])
+    price_column = _first_existing_column(frame, ["最新价", "最新", "price"])
+    pct_column = _first_existing_column(frame, ["涨跌幅", "涨跌幅%", "changepercent"])
+    change_column = _first_existing_column(frame, ["涨跌额", "涨跌", "change"])
+
+    if not code_column:
+        return {}
+
+    now = datetime.now(CHINA_TZ).strftime("%Y-%m-%d %H:%M:%S")
+    quotes: dict[str, Quote] = {}
+    for _index, row in frame.iterrows():
+        code = str(row.get(code_column, "")).zfill(6)
+        secid = codes.get(code)
+        if not secid:
+            continue
+
+        quotes[secid] = Quote(
+            secid=secid,
+            code=code,
+            name=str(row.get(name_column, "")) if name_column else code,
+            price=_num(row.get(price_column)) if price_column else None,
+            pct=_num(row.get(pct_column)) if pct_column else None,
+            change=_num(row.get(change_column)) if change_column else None,
+            time_text=now,
+        )
+    return quotes
+
+
+def _first_existing_column(frame: Any, names: list[str]) -> str | None:
+    columns = set(str(column) for column in getattr(frame, "columns", []))
+    for name in names:
+        if name in columns:
+            return name
+    return None

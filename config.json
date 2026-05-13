@@ -1,6 +1,6 @@
 {
   "market_provider": {
-    "name": "eastmoney",
+    "name": "auto",
     "timeout_seconds": 8,
     "use_live_proxy_for_decisions": false
   },
