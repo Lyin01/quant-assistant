@@ -7,6 +7,10 @@
 - 读取持仓和资金配置
 - 按配置里的交易纪律生成买卖建议
 - 保存复盘日志
+- 查看历史 K 线、均线和回撤信号
+- 查看 ETF 涨跌排行
+- 运行 MA 趋势回测
+- 从 CSV / Excel 导入持仓，上传截图留档
 
 ## 快速运行
 
@@ -31,9 +35,20 @@ pip install -r requirements.txt
 - `portfolio.json`：当前持仓快照。
 - `src/quant_assistant/strategy.py`：核心规则。
 - `src/quant_assistant/data_provider.py`：AkShare / 东方财富行情抓取。
+- `src/quant_assistant/market_data.py`：历史 K 线和 ETF 排行。
+- `src/quant_assistant/analytics.py`：均线、回撤、回测和今日清单。
+- `src/quant_assistant/importer.py`：CSV / Excel 持仓导入。
 - `src/quant_assistant/cli.py`：命令行入口。
 - `app.py`：Streamlit 本地页面。
 - `data/journal.csv`：运行后自动生成的复盘日志。
+
+## v2 功能
+
+- `总览`：资产概览、自动生成今日买卖清单、完整建议、行情快照。
+- `历史 K 线`：选择指数或 ETF，查看 K 线、MA20、MA60。
+- `信号 / ETF 排行`：查看均线/回撤信号，以及 AkShare ETF 涨跌排行。
+- `回测`：运行 MA 趋势策略回测，对比买入持有。
+- `导入持仓`：CSV / Excel 字段映射导入；截图先支持上传预览和手动录入片段。
 
 ## 当前默认纪律
 
