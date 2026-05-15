@@ -118,10 +118,68 @@ class AkShareProvider:
         return quotes, messages
 
 
+class TencentProvider:
+    def __init__(self, timeout: int = 8) -> None:
+        self.timeout = timeout
+
+    def get_quotes(self, secids: list[str]) -> dict[str, Quote]:
+        quotes, _messages = self.get_quotes_with_status(secids)
+        return quotes
+
+    def get_quotes_with_status(self, secids: list[str]) -> tuple[dict[str, Quote], list[str]]:
+        if not secids:
+            return {}, ["Tencent: no secids requested."]
+
+        symbols = {_tencent_symbol(secid): secid for secid in sorted(set(secids))}
+        params = {"q": ",".join(f"s_{symbol}" for symbol in symbols)}
+        url = "https://qt.gtimg.cn/q=" + params["q"]
+        request = urllib.request.Request(
+            url,
+            headers={
+                "Referer": "https://gu.qq.com/",
+                "User-Agent": "Mozilla/5.0 QuantAssistant/1.0",
+            },
+        )
+
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                text = response.read().decode("gbk", errors="ignore")
+        except Exception as exc:
+            return {}, [f"Tencent: request failed: {exc}"]
+
+        now = datetime.now(CHINA_TZ).strftime("%Y-%m-%d %H:%M:%S")
+        quotes: dict[str, Quote] = {}
+        for line in text.splitlines():
+            if '="' not in line:
+                continue
+            symbol = line.split('="', 1)[0].replace("v_s_", "")
+            secid = symbols.get(symbol)
+            if not secid:
+                continue
+            payload = line.split('="', 1)[1].rstrip('";')
+            fields = payload.split("~")
+            if len(fields) < 6:
+                continue
+            quotes[secid] = Quote(
+                secid=secid,
+                code=fields[2],
+                name=fields[1],
+                price=_num(fields[3]),
+                pct=_num(fields[5]),
+                change=_num(fields[4]),
+                time_text=now,
+            )
+
+        if not quotes:
+            return {}, ["Tencent: response contained no matching quote rows."]
+        return quotes, [f"Tencent: loaded {len(quotes)} quotes."]
+
+
 class AutoProvider:
     def __init__(self, timeout: int = 8) -> None:
         self.akshare = AkShareProvider()
         self.eastmoney = EastMoneyProvider(timeout=timeout)
+        self.tencent = TencentProvider(timeout=timeout)
 
     def get_quotes(self, secids: list[str]) -> dict[str, Quote]:
         quotes, _messages = self.get_quotes_with_status(secids)
@@ -133,16 +191,20 @@ class AutoProvider:
         if quotes and not missing_secids:
             return quotes, messages
 
-        if quotes and missing_secids:
-            fallback_quotes, fallback_messages = self.eastmoney.get_quotes_with_status(missing_secids)
-            quotes.update(fallback_quotes)
-            return quotes, messages + fallback_messages
+        eastmoney_targets = missing_secids if quotes else secids
+        fallback_quotes, fallback_messages = self.eastmoney.get_quotes_with_status(eastmoney_targets)
+        quotes.update(fallback_quotes)
+        messages += fallback_messages
 
-        fallback_quotes, fallback_messages = self.eastmoney.get_quotes_with_status(secids)
-        return fallback_quotes, messages + fallback_messages
+        missing_secids = sorted(set(secids) - set(quotes))
+        if missing_secids:
+            tencent_quotes, tencent_messages = self.tencent.get_quotes_with_status(missing_secids)
+            quotes.update(tencent_quotes)
+            messages += tencent_messages
+        return quotes, messages
 
 
-def build_provider(config: dict[str, Any]) -> AutoProvider | AkShareProvider | EastMoneyProvider:
+def build_provider(config: dict[str, Any]) -> AutoProvider | AkShareProvider | EastMoneyProvider | TencentProvider:
     provider_config = config.get("market_provider", {})
     name = str(provider_config.get("name", "auto")).lower()
     timeout = int(provider_config.get("timeout_seconds", 8))
@@ -151,6 +213,8 @@ def build_provider(config: dict[str, Any]) -> AutoProvider | AkShareProvider | E
         return AkShareProvider()
     if name == "eastmoney":
         return EastMoneyProvider(timeout=timeout)
+    if name == "tencent":
+        return TencentProvider(timeout=timeout)
     return AutoProvider(timeout=timeout)
 
 
@@ -259,3 +323,9 @@ def _normalize_code(value: object) -> str:
     if digits:
         return digits[-6:].zfill(6)
     return text.zfill(6)
+
+
+def _tencent_symbol(secid: str) -> str:
+    market, _dot, code = secid.partition(".")
+    prefix = "sz" if market == "0" else "sh"
+    return f"{prefix}{_normalize_code(code or secid)}"

@@ -34,7 +34,6 @@ portfolio = load_json(ROOT / "portfolio.json")
 fund = portfolio["accounts"]["fund"]
 stock = portfolio["accounts"]["stock"]
 options = instrument_options(config)
-recs = generate_recommendations(config, portfolio, quotes={})
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -122,7 +121,28 @@ if page == "总览":
     col3.metric("股票可用", f'{stock["available_cash"]:,.2f}')
     col4.metric("计划总子弹", f'{config["cash_plan"]["available_cash_total"]:,.0f}')
 
-    st.subheader("自动生成今日买卖清单")
+    st.subheader("行情快照")
+    st.caption(quote_status(config))
+    load_quotes = st.button("刷新行情并重算建议", type="primary")
+    if load_quotes:
+        cached_quotes.clear()
+
+    with st.spinner("正在获取行情..."):
+        quotes, quote_messages = cached_quotes(config, portfolio)
+
+    if quotes:
+        latest_time = max((q.time_text for q in quotes.values() if q.time_text), default="")
+        st.caption(f"行情更新时间: {latest_time or '未知'}")
+        st.dataframe(_quote_frame(quotes), use_container_width=True, hide_index=True)
+    else:
+        st.warning("未获取到实时行情，策略将降级使用 portfolio.json 里的 last_daily_pct 快照值。")
+
+    with st.expander("行情源状态", expanded=not bool(quotes)):
+        for message in quote_messages:
+            st.write(message)
+
+    recs = generate_recommendations(config, portfolio, quotes=quotes)
+    st.subheader("今日买卖清单（基于实时行情）" if quotes else "今日买卖清单（降级：使用持仓快照）")
     actions = action_list(recs)
     if actions.empty:
         st.info("当前没有触发明确买卖动作。")
@@ -139,20 +159,6 @@ if page == "总览":
         for rec in recs:
             st.write(f'**{rec["action"]}** `{rec["instrument"]}` `{rec["amount"]}`')
             st.caption(rec["reason"])
-
-    st.subheader("行情快照")
-    st.caption(quote_status(config))
-    load_quotes = st.button("刷新实时行情", type="primary")
-    if load_quotes:
-        with st.spinner("正在获取 AkShare / 东方财富行情..."):
-            quotes, quote_messages = cached_quotes(config, portfolio)
-        if quotes:
-            st.dataframe(_quote_frame(quotes), use_container_width=True, hide_index=True)
-        else:
-            st.warning("未获取到实时行情，将使用 portfolio.json 里的 last_daily_pct。")
-        with st.expander("行情源状态", expanded=not bool(quotes)):
-            for message in quote_messages:
-                st.write(message)
 
 elif page == "历史 K 线":
     st.subheader("历史 K 线")

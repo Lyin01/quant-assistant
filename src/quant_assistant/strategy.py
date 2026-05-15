@@ -91,9 +91,9 @@ def _stock_recommendations(
     for position in stock.get("positions", []):
         tag = position.get("tag")
         name = position["name"]
-        price = float(position.get("price", 0))
+        price = _price(config, quotes, position)
         shares = int(position.get("shares", 0))
-        profit_pct = float(position.get("holding_pnl_pct", 0))
+        profit_pct = _profit_pct(config, quotes, position)
 
         if tag == "semiconductor":
             rule = rules["semiconductor"]
@@ -128,6 +128,23 @@ def _daily_pct(config: dict[str, Any], quotes: dict[str, Quote], position: dict[
     if quote and quote.pct is not None:
         return float(quote.pct)
     return float(position.get("last_daily_pct", 0))
+
+
+def _price(config: dict[str, Any], quotes: dict[str, Quote], position: dict[str, Any]) -> float:
+    use_live = bool(config.get("market_provider", {}).get("use_live_proxy_for_decisions", False))
+    if use_live:
+        quote = quote_for_proxy(position.get("market_proxy"), config, quotes)
+        if quote and quote.price is not None:
+            return float(quote.price)
+    return float(position.get("price", 0))
+
+
+def _profit_pct(config: dict[str, Any], quotes: dict[str, Quote], position: dict[str, Any]) -> float:
+    price = _price(config, quotes, position)
+    cost = float(position.get("cost", 0) or 0)
+    if price > 0 and cost > 0:
+        return (price / cost - 1) * 100
+    return float(position.get("holding_pnl_pct", 0))
 
 
 def _buy_money(instrument: str, amount: float | int, reason: str) -> Recommendation:

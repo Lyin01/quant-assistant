@@ -2,7 +2,7 @@
   "market_provider": {
     "name": "auto",
     "timeout_seconds": 8,
-    "use_live_proxy_for_decisions": false
+    "use_live_proxy_for_decisions": true
   },
   "cash_plan": {
     "available_cash_total": 13000,
