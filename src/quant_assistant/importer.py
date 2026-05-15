@@ -260,12 +260,15 @@ def _position_row(name: str, numbers: list[float], source: str) -> dict[str, Any
 
 def _infer_tag(name: str) -> str:
     rules = [
-        ("wide_index", ["中证500", "A500", "沪深300", "宽基", "标普500"]),
+        ("wide_index", ["中证500", "A500", "沪深300", "宽基"]),
         ("tactical_ai", ["人工智能", "AI"]),
         ("power_grid", ["电网"]),
         ("military", ["军工"]),
         ("semiconductor", ["半导体", "芯片"]),
         ("robot", ["机器人"]),
+        ("overseas", ["纳指", "纳斯达克", "标普", "标普500"]),
+        ("healthcare", ["创新药", "医药"]),
+        ("defensive", ["稳健", "债", "货币"]),
     ]
     for tag, keywords in rules:
         if any(keyword in name for keyword in keywords):
