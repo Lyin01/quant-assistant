@@ -342,10 +342,11 @@ elif page == "导入持仓":
 
     st.subheader("从截图导入")
 
-    import_mode = st.segmented_control(
+    import_mode = st.radio(
         "导入模式",
         options=["截图识别", "纯文本粘贴"],
-        default="截图识别",
+        index=0,
+        horizontal=True,
         key="import_mode",
     )
 
