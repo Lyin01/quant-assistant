@@ -15,6 +15,13 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from quant_assistant.analytics import action_list, add_advanced_indicators, add_indicators, backtest_ma_trend, latest_signal
+from quant_assistant.analytics_panel import (
+    build_asset_distribution,
+    compute_return_curve,
+    compute_risk_metrics,
+    compute_monthly_returns,
+    load_portfolio_history,
+)
 from quant_assistant.data_source_health import read_health, summarize_by_provider
 from quant_assistant.config import load_json, save_json
 from quant_assistant.data_provider import build_provider, collect_secids, quote_status
@@ -163,7 +170,7 @@ def _title() -> None:
 
 page = st.sidebar.radio(
     "功能",
-    ["总览", "历史 K 线", "信号 / ETF 排行", "回测", "导入持仓"],
+    ["总览", "历史 K 线", "信号 / ETF 排行", "回测", "导入持仓", "分析"],
     index=0,
 )
 
@@ -674,3 +681,59 @@ elif page == "导入持仓":
             reload_portfolio()
             st.success(f"已添加 {manual_name} 到 {manual_account}，共 {len(merged)} 条持仓。")
             st.rerun()
+
+elif page == "分析":
+    st.subheader("资产分布")
+    dist = build_asset_distribution(portfolio)
+    if not dist.empty:
+        col1, col2 = st.columns(2)
+        with col1:
+            fig = px.pie(dist, values="market_value", names="tag", title="按策略类型")
+            st.plotly_chart(fig, use_container_width=True)
+        with col2:
+            fig2 = px.pie(dist, values="market_value", names="account", title="按账户")
+            st.plotly_chart(fig2, use_container_width=True)
+    else:
+        st.info("暂无持仓数据。")
+
+    st.subheader("累计收益曲线")
+    history_file = ROOT / "portfolio_history.jsonl"
+    hist_df = load_portfolio_history(history_file)
+    if not hist_df.empty and len(hist_df) >= 2:
+        curve = compute_return_curve(hist_df)
+        if not curve.empty:
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=curve["timestamp"], y=curve["cumulative_return_pct"],
+                mode="lines", name="累计收益%"
+            ))
+            fig.update_layout(title="累计收益走势", yaxis_title="收益率%")
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("收益数据不足。")
+    else:
+        st.info("持续导入持仓以生成收益曲线。")
+
+    st.subheader("风险指标")
+    metrics = compute_risk_metrics(hist_df)
+    if metrics:
+        m1, m2, m3 = st.columns(3)
+        m1.metric("最大回撤", f"{metrics['max_drawdown_pct']:.2f}%")
+        m2.metric("年化波动率", f"{metrics['annual_volatility_pct']:.2f}%")
+        m3.metric("夏普比率", f"{metrics['sharpe_ratio']:.2f}")
+    else:
+        st.info("数据不足，无法计算风险指标。")
+
+    st.subheader("月度收益")
+    monthly = compute_monthly_returns(hist_df)
+    if not monthly.empty:
+        pivot = monthly.pivot(index="year", columns="month", values="return_pct")
+        fig = px.imshow(
+            pivot,
+            labels=dict(x="月份", y="年份", color="收益率%"),
+            color_continuous_scale="RdYlGn",
+            aspect="auto",
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("数据不足，无法生成月度收益热力图。")
