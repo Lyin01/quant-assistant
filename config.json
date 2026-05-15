@@ -5,7 +5,7 @@
     "use_live_proxy_for_decisions": true
   },
   "cash_plan": {
-    "available_cash_total": 13000,
+    "available_cash_total": 1644,
     "minimum_cash_reserve": 5000,
     "wide_index_budget": 4000,
     "tactical_budget": 2500,
@@ -48,6 +48,18 @@
       "pullback_buy_price_low": 1.08,
       "pullback_buy_price_high": 1.10,
       "pullback_buy_shares": 100
+    },
+    "overseas": {
+      "sell_daily_pct": 2.0,
+      "sell_profit_pct": 15.0,
+      "sell_amount": 500
+    },
+    "healthcare": {
+      "sell_profit_pct": 10.0,
+      "sell_shares": 100
+    },
+    "defensive": {
+      "rebalance_profit_pct": 5.0
     }
   },
   "quotes": {
@@ -67,7 +79,8 @@
       "军工": "1.512660",
       "电网设备": "1.561700",
       "纳指": "0.159941",
-      "标普500": "1.513500"
+      "标普500": "1.513500",
+      "创新药": "1.599929"
     }
   }
 }

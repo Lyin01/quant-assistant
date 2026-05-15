@@ -67,6 +67,23 @@ def _fund_recommendations(
             else:
                 recs.append(_hold(name, "军工不补仓；等待反弹修复后再减。"))
 
+        elif tag == "overseas":
+            rule = rules["overseas"]
+            if daily_pct >= rule["sell_daily_pct"] and profit_pct >= rule["sell_profit_pct"]:
+                recs.append(_sell_money(name, rule["sell_amount"], f"海外涨幅 {daily_pct:.2f}%，持有收益 {profit_pct:.2f}%，止盈降仓。"))
+            else:
+                recs.append(_hold(name, f"海外未触发止盈，当前参考涨跌 {daily_pct:.2f}%，收益 {profit_pct:.2f}%。"))
+
+        elif tag == "defensive":
+            rule = rules["defensive"]
+            if profit_pct >= rule["rebalance_profit_pct"]:
+                recs.append(_sell_money(name, 200, f"稳健收益 {profit_pct:.2f}%，可适当止盈转为子弹。"))
+            else:
+                recs.append(_hold(name, f"稳健仓位收益 {profit_pct:.2f}%，继续持有。"))
+
+        else:
+            recs.append(_hold(name, "无特定策略规则，观望。"))
+
     wide_rule = rules["wide_index"]
     wide_positions = [p for p in positions if p.get("tag") == "wide_index"]
     if deployable_cash > 0 and available_cash >= wide_rule["deploy_when_cash_above"] and wide_positions:
@@ -112,6 +129,20 @@ def _stock_recommendations(
                 recs.append(_buy_shares(name, rule["pullback_buy_shares"], f"机器人回到 {price:.3f}，处于计划低吸区间。"))
             else:
                 recs.append(_hold(name, f"机器人持有收益 {profit_pct:.2f}%，未触发买卖。"))
+
+        elif tag == "healthcare":
+            rule = rules["healthcare"]
+            if profit_pct >= rule["sell_profit_pct"]:
+                recs.append(_sell_shares(name, rule["sell_shares"], f"创新药收益 {profit_pct:.2f}%，触发止盈。"))
+            else:
+                recs.append(_hold(name, f"创新药收益 {profit_pct:.2f}%，未触发止盈。"))
+
+        elif tag == "overseas":
+            rule = rules["overseas"]
+            if profit_pct >= rule["sell_profit_pct"]:
+                recs.append(_sell_shares(name, 100, f"海外持仓收益 {profit_pct:.2f}%，止盈。"))
+            else:
+                recs.append(_hold(name, f"海外持仓收益 {profit_pct:.2f}%，继续持有。"))
 
         else:
             recs.append(_hold(name, "仓位小或无明确信号，不操作。"))

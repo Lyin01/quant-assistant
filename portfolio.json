@@ -1,120 +1,146 @@
 {
-  "as_of": "2026-05-13 10:55",
+  "as_of": "2026-05-15 15:00",
   "accounts": {
     "fund": {
       "name": "支付宝基金",
-      "total_assets": 18708.50,
-      "today_pnl": 50.00,
+      "total_assets": 18118.73,
+      "today_pnl": -228.25,
       "positions": [
-        {
-          "id": "midcap_500",
-          "name": "易方达中证500",
-          "tag": "wide_index",
-          "market_value": 5662.50,
-          "holding_pnl": -8.80,
-          "holding_pnl_pct": -0.16,
-          "market_proxy": "中证500",
-          "last_daily_pct": 0.11
-        },
-        {
-          "id": "ai_dca",
-          "name": "天弘中证人工智能定投小仓",
-          "tag": "core_ai_dca",
-          "market_value": 453.32,
-          "holding_pnl": 53.32,
-          "holding_pnl_pct": 13.33,
-          "market_proxy": "人工智能",
-          "last_daily_pct": -0.10
-        },
-        {
-          "id": "nasdaq_100_a",
-          "name": "大成纳斯达克100",
-          "tag": "overseas",
-          "market_value": 2043.80,
-          "holding_pnl": 43.80,
-          "holding_pnl_pct": 2.19,
-          "market_proxy": "纳指",
-          "last_daily_pct": -0.87
-        },
-        {
-          "id": "steady_income",
-          "name": "易方达稳健收益",
-          "tag": "defensive",
-          "market_value": 401.51,
-          "holding_pnl": 1.51,
-          "holding_pnl_pct": 0.38,
-          "last_daily_pct": -0.04
-        },
         {
           "id": "sp500",
           "name": "博时标普500ETF联接",
           "tag": "overseas",
-          "market_value": 108.04,
-          "holding_pnl": 8.04,
-          "holding_pnl_pct": 8.04,
+          "market_value": 109.18,
+          "holding_pnl": 9.18,
+          "holding_pnl_pct": 9.18,
           "market_proxy": "标普500",
-          "last_daily_pct": 0.19
-        },
-        {
-          "id": "ai_tactical",
-          "name": "天弘中证人工智能大仓",
-          "tag": "tactical_ai",
-          "market_value": 2212.20,
-          "holding_pnl": 313.23,
-          "holding_pnl_pct": 16.49,
-          "market_proxy": "人工智能",
-          "last_daily_pct": -0.10
-        },
-        {
-          "id": "military_fund",
-          "name": "广发中证军工ETF联接",
-          "tag": "military",
-          "market_value": 1424.02,
-          "holding_pnl": 21.97,
-          "holding_pnl_pct": 1.57,
-          "market_proxy": "军工",
-          "last_daily_pct": 0.38
-        },
-        {
-          "id": "power_grid",
-          "name": "天弘中证电网设备",
-          "tag": "power_grid",
-          "market_value": 3295.02,
-          "holding_pnl": 387.85,
-          "holding_pnl_pct": 13.34,
-          "market_proxy": "电网设备",
-          "last_daily_pct": 2.26
+          "last_daily_pct": 0.77
         },
         {
           "id": "nasdaq_selected",
           "name": "华宝纳斯达克精选",
           "tag": "overseas",
-          "market_value": 3108.10,
-          "holding_pnl": 231.88,
-          "holding_pnl_pct": 8.06,
+          "market_value": 3145.75,
+          "holding_pnl": 269.53,
+          "holding_pnl_pct": 9.37,
           "market_proxy": "纳指",
-          "last_daily_pct": -0.48
+          "last_daily_pct": 0.97
+        },
+        {
+          "id": "midcap_500",
+          "name": "易方达中证500",
+          "tag": "wide_index",
+          "market_value": 5594.65,
+          "holding_pnl": -76.65,
+          "holding_pnl_pct": -1.35,
+          "market_proxy": "中证500",
+          "last_daily_pct": -1.54
+        },
+        {
+          "id": "ai_dca",
+          "name": "天弘中证人工智能定投小仓",
+          "tag": "core_ai_dca",
+          "market_value": 459.98,
+          "holding_pnl": 59.98,
+          "holding_pnl_pct": 14.99,
+          "market_proxy": "人工智能",
+          "last_daily_pct": -2.26
+        },
+        {
+          "id": "nasdaq_100_a",
+          "name": "大成纳斯达克100",
+          "tag": "overseas",
+          "market_value": 2046.11,
+          "holding_pnl": 46.11,
+          "holding_pnl_pct": 2.31,
+          "market_proxy": "纳指",
+          "last_daily_pct": 0.73
+        },
+        {
+          "id": "steady_income",
+          "name": "易方达稳健收益",
+          "tag": "defensive",
+          "market_value": 399.69,
+          "holding_pnl": -0.31,
+          "holding_pnl_pct": -0.08,
+          "last_daily_pct": -0.14
+        },
+        {
+          "id": "ai_tactical",
+          "name": "天弘中证人工智能大仓",
+          "tag": "tactical_ai",
+          "market_value": 1717.05,
+          "holding_pnl": 264.36,
+          "holding_pnl_pct": 18.20,
+          "market_proxy": "人工智能",
+          "last_daily_pct": -2.26
+        },
+        {
+          "id": "military_fund",
+          "name": "广发中证军工ETF联接",
+          "tag": "military",
+          "market_value": 1375.92,
+          "holding_pnl": -94.17,
+          "holding_pnl_pct": -6.41,
+          "market_proxy": "军工",
+          "last_daily_pct": -2.35
+        },
+        {
+          "id": "power_grid",
+          "name": "天弘中证电网设备",
+          "tag": "power_grid",
+          "market_value": 3270.40,
+          "holding_pnl": 363.23,
+          "holding_pnl_pct": 12.49,
+          "market_proxy": "电网设备",
+          "last_daily_pct": -3.24
         }
       ]
     },
     "stock": {
       "name": "国信证券",
-      "total_assets": 6285.90,
-      "market_value": 789.50,
-      "available_cash": 5496.40,
-      "today_pnl": -4.30,
-      "holding_pnl": 25.60,
+      "total_assets": 6245.08,
+      "market_value": 4600.80,
+      "available_cash": 1644.28,
+      "today_pnl": -40.00,
+      "holding_pnl": -15.22,
       "positions": [
+        {
+          "id": "walter_nuclear",
+          "name": "沃尔核材",
+          "tag": "imported",
+          "shares": 100,
+          "price": 22.490,
+          "cost": 23.000,
+          "market_value": 2249.00,
+          "holding_pnl": -51.02,
+          "holding_pnl_pct": -2.22,
+          "last_daily_pct": 0.0
+        },
+        {
+          "id": "nasdaq_dacheng",
+          "name": "纳指大成",
+          "tag": "overseas",
+          "shares": 900,
+          "price": 1.733,
+          "cost": 1.725,
+          "market_value": 1559.70,
+          "holding_pnl": 7.60,
+          "holding_pnl_pct": 0.49,
+          "market_proxy": "纳指",
+          "last_daily_pct": 0.0
+        },
         {
           "id": "innovative_drug",
           "name": "创新药",
           "tag": "healthcare",
           "shares": 300,
-          "price": 0.827,
+          "price": 0.798,
           "cost": 0.825,
-          "market_value": 248.10,
-          "holding_pnl": 0.70,
-          "holding_pnl_pct": 0.28,
+          "market_value": 239.40,
+          "holding_pnl": -8.00,
+          "holding_pnl_pct": -3.23,
+          "market_proxy": "创新药",
           "last_daily_pct": 0.0
         },
         {
@@ -122,25 +148,12 @@
           "name": "半导体",
           "tag": "semiconductor",
           "shares": 100,
-          "price": 2.003,
+          "price": 2.035,
           "cost": 2.071,
-          "market_value": 200.30,
-          "holding_pnl": -6.80,
-          "holding_pnl_pct": -3.28,
+          "market_value": 203.50,
+          "holding_pnl": -3.60,
+          "holding_pnl_pct": -1.74,
           "market_proxy": "半导体",
-          "last_daily_pct": 0.0
-        },
-        {
-          "id": "robot",
-          "name": "机器人",
-          "tag": "robot",
-          "shares": 300,
-          "price": 1.137,
-          "cost": 1.031,
-          "market_value": 341.10,
-          "holding_pnl": 31.70,
-          "holding_pnl_pct": 10.25,
-          "market_proxy": "机器人",
           "last_daily_pct": 0.0
         }
       ]

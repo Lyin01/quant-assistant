@@ -153,7 +153,11 @@ if page == "总览":
 
     st.subheader("行情快照")
     st.caption(quote_status(config))
-    load_quotes = st.button("刷新行情并重算建议", type="primary")
+    btn_col1, btn_col2 = st.columns(2)
+    load_quotes = btn_col1.button("刷新行情并重算建议", type="primary")
+    if btn_col2.button("从文件刷新持仓"):
+        reload_portfolio()
+        st.rerun()
     if load_quotes:
         cached_quotes.clear()
 
@@ -456,20 +460,27 @@ elif page == "导入持仓":
             )
 
     with st.form("manual_position"):
-        st.caption("截图无法自动识别时，可以先手动录入关键仓位。")
+        st.caption("手动录入持仓，提交后直接写入总览。")
         c1, c2, c3, c4 = st.columns(4)
         manual_name = c1.text_input("名称")
-        manual_tag = c2.selectbox("类型", ["wide_index", "tactical_ai", "power_grid", "military", "semiconductor", "robot", "imported"])
+        manual_tag = c2.selectbox("类型", ["wide_index", "tactical_ai", "power_grid", "military", "semiconductor", "robot", "overseas", "healthcare", "defensive", "core_ai_dca", "imported"])
         manual_value = c3.number_input("市值/金额", min_value=0.0, value=0.0)
         manual_profit_pct = c4.number_input("持有收益率%", value=0.0)
-        submitted = st.form_submit_button("生成持仓片段")
+        manual_account = st.selectbox("目标账户", ["fund", "stock"], format_func=lambda x: "支付宝基金 (fund)" if x == "fund" else "国信证券 (stock)")
+        submitted = st.form_submit_button("添加到持仓", type="primary")
         if submitted and manual_name:
-            st.json(
-                {
-                    "id": f"manual_{manual_name}",
-                    "name": manual_name,
-                    "tag": manual_tag,
-                    "market_value": manual_value,
-                    "holding_pnl_pct": manual_profit_pct,
-                }
-            )
+            new_position = {
+                "id": f"manual_{manual_name}",
+                "name": manual_name,
+                "tag": manual_tag,
+                "market_value": manual_value,
+                "holding_pnl_pct": manual_profit_pct,
+            }
+            target = portfolio["accounts"][manual_account]
+            merged = merge_positions(target["positions"], [new_position])
+            target["positions"] = merged
+            portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+            save_json(ROOT / "portfolio.json", portfolio)
+            reload_portfolio()
+            st.success(f"已添加 {manual_name} 到 {manual_account}，共 {len(merged)} 条持仓。")
+            st.rerun()
