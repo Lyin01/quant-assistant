@@ -205,6 +205,61 @@ if page == "总览":
             st.write(f'**{rec["action"]}** `{rec["instrument"]}` `{rec["amount"]}`')
             st.caption(rec["reason"])
 
+    # Change history panel
+    with st.expander("持仓变更记录"):
+        from quant_assistant.history import read_history, rollback
+
+        history_file = ROOT / "portfolio_history.jsonl"
+        history = read_history(history_file, limit=10)
+
+        if not history:
+            st.info("暂无变更记录。导入持仓后会自动记录。")
+        else:
+            for record in history:
+                ts = record.get("timestamp", "")[:16].replace("T", " ")
+                account = "股票" if record.get("account") == "stock" else "基金"
+                changes = record.get("changes", {})
+                added = changes.get("added", [])
+                updated = changes.get("updated", [])
+                removed = changes.get("removed", [])
+
+                parts = []
+                if added:
+                    parts.append(f"新增 {len(added)} 条")
+                if updated:
+                    parts.append(f"更新 {len(updated)} 条")
+                if removed:
+                    parts.append(f"移除 {len(removed)} 条")
+
+                summary_text = "，".join(parts) if parts else "无变更"
+                st.write(f"**{ts}** | {account} | {record.get('type', 'unknown')} | {summary_text}")
+
+                detail_parts = []
+                if added:
+                    detail_parts.append(f"新增: {', '.join(added)}")
+                if updated:
+                    detail_parts.append(f"更新: {', '.join(updated)}")
+                if removed:
+                    detail_parts.append(f"移除: {', '.join(removed)}")
+                if detail_parts:
+                    st.caption("  ".join(detail_parts))
+
+            # Rollback button
+            st.divider()
+            if st.button("撤销上次导入", help="恢复到上一次导入前的持仓状态"):
+                restored = rollback(history_file)
+                if restored:
+                    account_key = history[0].get("account") if history else None
+                    if account_key and account_key in portfolio["accounts"]:
+                        portfolio["accounts"][account_key] = restored
+                        portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+                        save_json(ROOT / "portfolio.json", portfolio)
+                        reload_portfolio()
+                        st.success(f"已撤销上次导入，{account_key} 持仓已恢复。")
+                        st.rerun()
+                else:
+                    st.warning("无可用的历史记录用于撤销。")
+
 elif page == "历史 K 线":
     st.subheader("历史 K 线")
     name = st.selectbox("标的", list(options.keys()), index=0)
