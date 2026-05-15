@@ -1,6 +1,6 @@
 from quant_assistant.config import load_json
 from quant_assistant.strategy import generate_recommendations
-from quant_assistant.analytics import action_list, add_indicators, backtest_ma_trend, latest_signal
+from quant_assistant.analytics import action_list, add_advanced_indicators, add_indicators, backtest_ma_trend, latest_signal
 from quant_assistant.importer import parse_ocr_positions, parse_ocr_summary
 import pandas as pd
 
@@ -116,6 +116,75 @@ def test_parse_ocr_positions():
     assert frame.loc[0, "cost"] == 2.071
     assert frame.loc[0, "holding_pnl"] == -3.60
     assert frame.loc[1, "holding_pnl_pct"] == 12.90
+
+
+def test_add_advanced_indicators():
+    frame = pd.DataFrame(
+        {
+            "date": pd.date_range("2024-01-01", periods=90, freq="D"),
+            "open": range(90),
+            "high": range(1, 91),
+            "low": range(90),
+            "close": [100 + index for index in range(90)],
+            "volume": [1000] * 90,
+        }
+    )
+
+    enriched = add_advanced_indicators(frame)
+
+    # MACD columns
+    assert "macd" in enriched.columns
+    assert "macd_signal" in enriched.columns
+    assert "macd_hist" in enriched.columns
+
+    # RSI
+    assert "rsi14" in enriched.columns
+
+    # Bollinger Bands
+    assert "bb_middle" in enriched.columns
+    assert "bb_upper" in enriched.columns
+    assert "bb_lower" in enriched.columns
+
+
+def test_add_advanced_indicators_empty_frame():
+    empty = pd.DataFrame()
+    result = add_advanced_indicators(empty)
+    assert result.empty
+
+
+def test_add_advanced_indicators_short_frame():
+    short = pd.DataFrame(
+        {
+            "date": pd.date_range("2024-01-01", periods=10),
+            "close": range(10),
+        }
+    )
+    result = add_advanced_indicators(short)
+    # Should return unchanged since < 26 rows
+    assert "macd" not in result.columns
+
+
+def test_add_advanced_indicators_combined_with_basic():
+    frame = pd.DataFrame(
+        {
+            "date": pd.date_range("2024-01-01", periods=90, freq="D"),
+            "open": range(90),
+            "high": range(1, 91),
+            "low": range(90),
+            "close": [100 + index for index in range(90)],
+            "volume": [1000] * 90,
+        }
+    )
+
+    enriched = add_indicators(frame)
+    enriched = add_advanced_indicators(enriched)
+
+    # Both basic and advanced indicators present
+    assert "ma20" in enriched.columns
+    assert "ma60" in enriched.columns
+    assert "macd" in enriched.columns
+    assert "rsi14" in enriched.columns
+    assert "bb_upper" in enriched.columns
 
 
 def test_parse_fund_ocr_format_and_summary():

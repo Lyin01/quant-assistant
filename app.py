@@ -14,7 +14,8 @@ import streamlit as st
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from quant_assistant.analytics import action_list, add_indicators, backtest_ma_trend, latest_signal
+from quant_assistant.analytics import action_list, add_advanced_indicators, add_indicators, backtest_ma_trend, latest_signal
+from quant_assistant.data_source_health import read_health, summarize_by_provider
 from quant_assistant.config import load_json, save_json
 from quant_assistant.data_provider import build_provider, collect_secids, quote_status
 from quant_assistant.importer import (
@@ -124,6 +125,19 @@ def _kline_figure(frame: pd.DataFrame, name: str) -> go.Figure:
     for column in ["ma20", "ma60"]:
         if column in frame.columns:
             figure.add_trace(go.Scatter(x=frame["date"], y=frame[column], mode="lines", name=column.upper()))
+    # Bollinger Bands
+    for column in ["bb_upper", "bb_lower"]:
+        if column in frame.columns:
+            label = "BB Upper" if column == "bb_upper" else "BB Lower"
+            figure.add_trace(
+                go.Scatter(
+                    x=frame["date"],
+                    y=frame[column],
+                    mode="lines",
+                    name=label,
+                    line=dict(dash="dash", width=1),
+                )
+            )
     figure.update_layout(
         title=name,
         height=560,
@@ -185,6 +199,20 @@ if page == "总览":
     with st.expander("行情源状态", expanded=not bool(quotes)):
         for message in quote_messages:
             st.write(message)
+
+        # Data source health summary
+        health_records = read_health(days=7)
+        if health_records:
+            st.divider()
+            st.caption("数据源健康度（近7天）")
+            health_summary = summarize_by_provider(health_records)
+            for provider, stats in health_summary.items():
+                rate = stats["success_rate"]
+                latency = stats["avg_latency_ms"]
+                total = stats["total_requests"]
+                st.write(
+                    f"**{provider}**: 成功率 {rate:.1f}%, 平均延迟 {latency:.0f}ms, 总请求 {total:.0f}"
+                )
 
     recs = generate_recommendations(config, portfolio, quotes=quotes)
     st.subheader("今日买卖清单（基于实时行情）" if quotes else "今日买卖清单（降级：使用持仓快照）")
@@ -275,6 +303,7 @@ elif page == "历史 K 线":
             st.warning("未获取到历史 K 线。")
         else:
             enriched = add_indicators(history)
+            enriched = add_advanced_indicators(enriched)
             st.plotly_chart(_kline_figure(enriched, name), use_container_width=True)
             st.dataframe(enriched.tail(120), use_container_width=True, hide_index=True)
         with st.expander("历史数据源状态", expanded=history.empty):

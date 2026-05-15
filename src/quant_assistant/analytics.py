@@ -21,6 +21,34 @@ def add_indicators(frame: pd.DataFrame) -> pd.DataFrame:
     return data
 
 
+def add_advanced_indicators(frame: pd.DataFrame) -> pd.DataFrame:
+    data = frame.copy()
+    if data.empty or len(data) < 26:
+        return data
+
+    # MACD
+    ema12 = data["close"].ewm(span=12, adjust=False).mean()
+    ema26 = data["close"].ewm(span=26, adjust=False).mean()
+    data["macd"] = ema12 - ema26
+    data["macd_signal"] = data["macd"].ewm(span=9, adjust=False).mean()
+    data["macd_hist"] = data["macd"] - data["macd_signal"]
+
+    # RSI(14)
+    delta = data["close"].diff()
+    gain = delta.where(delta > 0, 0).rolling(14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+    rs = gain / loss
+    data["rsi14"] = 100 - (100 / (1 + rs))
+
+    # Bollinger Bands (20, 2)
+    data["bb_middle"] = data["close"].rolling(20).mean()
+    bb_std = data["close"].rolling(20).std()
+    data["bb_upper"] = data["bb_middle"] + 2 * bb_std
+    data["bb_lower"] = data["bb_middle"] - 2 * bb_std
+
+    return data
+
+
 def latest_signal(frame: pd.DataFrame) -> dict[str, Any]:
     data = add_indicators(frame)
     if data.empty:

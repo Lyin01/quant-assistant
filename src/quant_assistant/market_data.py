@@ -8,6 +8,8 @@ from typing import Any
 
 import pandas as pd
 
+from .disk_cache import load_cached, save_cached
+
 
 def instrument_options(config: dict[str, Any]) -> dict[str, str]:
     quotes = config.get("quotes", {})
@@ -23,6 +25,13 @@ def fetch_history(
     end: date,
     adjust: str = "qfq",
 ) -> tuple[pd.DataFrame, list[str]]:
+    # Try cache first
+    start_iso = start.isoformat()
+    end_iso = end.isoformat()
+    cached = load_cached(secid, start_iso, end_iso, adjust)
+    if cached is not None:
+        return cached, ["Cache hit"]
+
     try:
         import akshare as ak
     except Exception as exc:
@@ -47,12 +56,15 @@ def fetch_history(
             normalized = normalize_history(frame)
             normalized = _filter_dates(normalized, start, end)
             messages.append(f"AkShare alternate index history: {symbol}, {len(normalized)} rows.")
+            if not normalized.empty:
+                save_cached(secid, start_iso, end_iso, adjust, normalized)
             return normalized, messages
         normalized = normalize_history(frame)
         normalized = _filter_dates(normalized, start, end)
         messages.append(f"AkShare index history: {symbol}, {len(normalized)} rows.")
         if normalized.empty:
             return _eastmoney_history_or_empty(secid, start, end, adjust, messages)
+        save_cached(secid, start_iso, end_iso, adjust, normalized)
         return normalized, messages
 
     try:
@@ -71,6 +83,7 @@ def fetch_history(
     messages.append(f"AkShare ETF history: {code}, {len(normalized)} rows.")
     if normalized.empty:
         return _eastmoney_history_or_empty(secid, start, end, adjust, messages)
+    save_cached(secid, start_iso, end_iso, adjust, normalized)
     return normalized, messages
 
 

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import time
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from typing import Any
+
+from .data_source_health import record_request
 
 
 CHINA_TZ = timezone(timedelta(hours=8))
@@ -186,19 +189,37 @@ class AutoProvider:
         return quotes
 
     def get_quotes_with_status(self, secids: list[str]) -> tuple[dict[str, Quote], list[str]]:
+        requested = len(secids)
+
+        # AkShare
+        start = time.perf_counter()
         quotes, messages = self.akshare.get_quotes_with_status(secids)
+        latency_ms = (time.perf_counter() - start) * 1000
+        success = len(quotes)
+        record_request("akshare", requested=requested, success=success, failed=requested - success, latency_ms=latency_ms)
+
         missing_secids = sorted(set(secids) - set(quotes))
         if quotes and not missing_secids:
             return quotes, messages
 
+        # EastMoney fallback
         eastmoney_targets = missing_secids if quotes else secids
+        start = time.perf_counter()
         fallback_quotes, fallback_messages = self.eastmoney.get_quotes_with_status(eastmoney_targets)
+        latency_ms = (time.perf_counter() - start) * 1000
+        success = len(fallback_quotes)
+        record_request("eastmoney", requested=len(eastmoney_targets), success=success, failed=len(eastmoney_targets) - success, latency_ms=latency_ms)
         quotes.update(fallback_quotes)
         messages += fallback_messages
 
         missing_secids = sorted(set(secids) - set(quotes))
         if missing_secids:
+            # Tencent fallback
+            start = time.perf_counter()
             tencent_quotes, tencent_messages = self.tencent.get_quotes_with_status(missing_secids)
+            latency_ms = (time.perf_counter() - start) * 1000
+            success = len(tencent_quotes)
+            record_request("tencent", requested=len(missing_secids), success=success, failed=len(missing_secids) - success, latency_ms=latency_ms)
             quotes.update(tencent_quotes)
             messages += tencent_messages
         return quotes, messages
