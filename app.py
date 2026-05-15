@@ -387,13 +387,32 @@ elif page == "导入持仓":
             key="csv_account_select",
         )
         if st.button("确认更新持仓", type="primary", key="csv_update_btn"):
+            from quant_assistant.history import compute_delta, record_change
+
             target = portfolio["accounts"][csv_account_choice]
+            previous_snapshot = dict(target)
+
             merged = merge_positions(target["positions"], positions)
             target["positions"] = merged
             portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+            delta = compute_delta(previous_snapshot.get("positions", []), positions)
+            account_summary = {
+                "total_assets": target.get("total_assets"),
+                "total_positions": len(merged),
+            }
+            record_change(
+                ROOT / "portfolio_history.jsonl",
+                change_type="csv_import",
+                account=csv_account_choice,
+                delta=delta,
+                summary=account_summary,
+                previous_snapshot=previous_snapshot,
+            )
+
             save_json(ROOT / "portfolio.json", portfolio)
             reload_portfolio()
-            st.success(f"已更新 {csv_account_choice} 持仓，共 {len(merged)} 条。")
+            st.success(f"已更新 {csv_account_choice} 持仓，共 {len(merged)} 条。变更已记录到历史。")
             st.rerun()
 
     st.subheader("从截图导入")
