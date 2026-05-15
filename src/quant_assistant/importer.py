@@ -279,3 +279,57 @@ def _looks_like_shares(source: str) -> bool:
 
 def _looks_like_price_cost(source: str) -> bool:
     return any(keyword in source for keyword in ["现价", "成本", "价格"])
+
+
+def ocr_image(image_bytes: bytes) -> str:
+    """Run RapidOCR on raw image bytes, return recognized text as a single string."""
+    from rapidocr_onnxruntime import RapidOCR
+
+    import numpy as np
+    from PIL import Image
+
+    engine = RapidOCR()
+    img = Image.open(BytesIO(image_bytes)).convert("RGB")
+    result, _ = engine(np.array(img))
+    if not result:
+        return ""
+    return "\n".join(item[1] for item in result)
+
+
+def merge_positions(
+    existing_positions: list[dict[str, Any]],
+    imported_positions: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Replace positions with imported ones, preserving id/tag/market_proxy from existing."""
+    existing_by_name: dict[str, dict[str, Any]] = {}
+    for pos in existing_positions:
+        existing_by_name[pos["name"]] = pos
+
+    merged: list[dict[str, Any]] = []
+    for imp in imported_positions:
+        name = imp.get("name", "")
+        existing = existing_by_name.get(name)
+        if existing:
+            preserved = dict(imp)
+            for field in ("id", "tag", "market_proxy"):
+                if field in existing and existing[field]:
+                    preserved[field] = existing[field]
+            merged.append(preserved)
+        else:
+            if not imp.get("tag") or imp["tag"] == "imported":
+                imp["tag"] = _infer_tag(name)
+            merged.append(imp)
+    return merged
+
+
+def merge_account_summary(
+    existing_account: dict[str, Any],
+    summary: dict[str, Any],
+) -> dict[str, Any]:
+    """Update account-level fields from parsed summary, keeping existing as fallback."""
+    updated = dict(existing_account)
+    for summary_key in ("total_assets", "today_pnl", "holding_pnl", "market_value", "available_cash"):
+        value = summary.get(summary_key)
+        if value is not None:
+            updated[summary_key] = value
+    return updated

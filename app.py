@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from io import BytesIO
 from pathlib import Path
 
 import pandas as pd
@@ -14,10 +15,12 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from quant_assistant.analytics import action_list, add_indicators, backtest_ma_trend, latest_signal
-from quant_assistant.config import load_json
+from quant_assistant.config import load_json, save_json
 from quant_assistant.data_provider import build_provider, collect_secids, quote_status
 from quant_assistant.importer import (
     dataframe_to_positions,
+    merge_account_summary,
+    merge_positions,
     normalize_import_table,
     parse_ocr_positions,
     parse_ocr_summary,
@@ -52,6 +55,32 @@ def cached_history(secid: str, start_text: str, end_text: str, adjust: str) -> t
 @st.cache_data(ttl=900, show_spinner=False)
 def cached_etf_ranking(limit: int) -> tuple[pd.DataFrame, list[str]]:
     return fetch_etf_ranking(limit)
+
+
+@st.cache_resource(show_spinner="正在加载 OCR 引擎...")
+def _get_ocr_engine():
+    from rapidocr_onnxruntime import RapidOCR
+    return RapidOCR()
+
+
+def run_ocr(image_bytes: bytes) -> str:
+    import numpy as np
+    from PIL import Image
+
+    engine = _get_ocr_engine()
+    img = Image.open(BytesIO(image_bytes)).convert("RGB")
+    result, _ = engine(np.array(img))
+    if not result:
+        return ""
+    return "\n".join(item[1] for item in result)
+
+
+def reload_portfolio() -> None:
+    global portfolio, fund, stock
+    portfolio = load_json(ROOT / "portfolio.json")
+    fund = portfolio["accounts"]["fund"]
+    stock = portfolio["accounts"]["stock"]
+    cached_quotes.clear()
 
 
 def _quote_frame(quotes: dict) -> pd.DataFrame:
@@ -276,6 +305,24 @@ elif page == "导入持仓":
             file_name="imported-positions.json",
             mime="application/json",
         )
+        st.divider()
+        st.subheader("更新到总览")
+        csv_account_choice = st.selectbox(
+            "目标账户",
+            ["fund", "stock"],
+            index=0,
+            format_func=lambda x: "支付宝基金 (fund)" if x == "fund" else "国信证券 (stock)",
+            key="csv_account_select",
+        )
+        if st.button("确认更新持仓", type="primary", key="csv_update_btn"):
+            target = portfolio["accounts"][csv_account_choice]
+            merged = merge_positions(target["positions"], positions)
+            target["positions"] = merged
+            portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+            save_json(ROOT / "portfolio.json", portfolio)
+            reload_portfolio()
+            st.success(f"已更新 {csv_account_choice} 持仓，共 {len(merged)} 条。")
+            st.rerun()
 
     st.subheader("从截图导入")
     image_col, ocr_col = st.columns([1, 2])
@@ -283,13 +330,23 @@ elif page == "导入持仓":
         image_file = st.file_uploader("上传截图 JPG / PNG", type=["jpg", "jpeg", "png"])
         if image_file is not None:
             st.image(image_file, caption="截图预览", width=320)
-        st.caption("图片只做小预览。先用手机/微信识别文字，再粘到右侧解析。")
+
+    ocr_prefill = ""
+    if image_file is not None:
+        image_bytes = image_file.getvalue()
+        with st.spinner("正在识别截图文字..."):
+            ocr_prefill = run_ocr(image_bytes)
+        if ocr_prefill:
+            st.success(f"OCR 已识别 {len(ocr_prefill)} 个字符，可编辑后解析。")
+        else:
+            st.warning("OCR 未识别到文字，请手动粘贴。")
 
     with ocr_col:
         with st.form("ocr_import_form"):
             preset = st.selectbox("解析格式", ["股票截图", "基金截图", "通用"], index=0)
             ocr_text = st.text_area(
-                "粘贴截图 OCR 文本",
+                "截图 OCR 文本（自动识别或手动粘贴）",
+                value=ocr_prefill,
                 height=180,
                 placeholder=(
                     "股票：半导体 | 203.50 | 100 | 100 | 2.035 | 2.071 | -3.60 | -1.74%\n"
@@ -327,6 +384,46 @@ elif page == "导入持仓":
                     file_name="screenshot-positions.json",
                     mime="application/json",
                 )
+
+                st.divider()
+                st.subheader("更新到总览")
+                detected_account = summary.get("account_type") if summary else None
+                account_choice = st.selectbox(
+                    "目标账户",
+                    ["fund", "stock"],
+                    index=0 if detected_account == "fund" else 1,
+                    format_func=lambda x: "支付宝基金 (fund)" if x == "fund" else "国信证券 (stock)",
+                    key="ocr_account_select",
+                )
+                target_account = portfolio["accounts"][account_choice]
+                existing_names = {p["name"] for p in target_account["positions"]}
+                imported_names = {p["name"] for p in parsed_positions}
+                new_names = imported_names - existing_names
+                removed_names = existing_names - imported_names
+                with st.expander("变更预览", expanded=True):
+                    if new_names:
+                        st.write("新增持仓:", ", ".join(new_names))
+                    if removed_names:
+                        st.write("将移除:", ", ".join(removed_names))
+                    if not new_names and not removed_names:
+                        st.write("持仓列表无变化，仅更新数值。")
+                    if summary:
+                        st.json({k: v for k, v in summary.items() if v is not None and k != "account_type"})
+                if st.button("确认更新持仓", type="primary", key="ocr_update_btn"):
+                    merged_positions = merge_positions(target_account["positions"], parsed_positions)
+                    if summary:
+                        updated_account = merge_account_summary(target_account, summary)
+                    else:
+                        updated_account = dict(target_account)
+                    updated_account["positions"] = merged_positions
+                    portfolio["accounts"][account_choice] = updated_account
+                    portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    save_json(ROOT / "portfolio.json", portfolio)
+                    reload_portfolio()
+                    for key in ("ocr_import_parsed", "ocr_import_summary", "ocr_import_positions"):
+                        st.session_state.pop(key, None)
+                    st.success(f"已更新 {account_choice} 持仓，共 {len(merged_positions)} 条。")
+                    st.rerun()
 
         with st.expander("推荐粘贴格式", expanded=False):
             st.code(
