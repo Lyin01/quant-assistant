@@ -98,6 +98,16 @@ def _quote_frame(quotes: dict) -> pd.DataFrame:
     )
 
 
+def _merge_parsed_frames(frames: list[pd.DataFrame]) -> pd.DataFrame:
+    """Merge multiple parsed DataFrames, keeping the latest row for duplicate names."""
+    if not frames:
+        return pd.DataFrame()
+    combined = pd.concat(frames, ignore_index=True)
+    if combined.empty or "name" not in combined.columns:
+        return combined
+    return combined.drop_duplicates(subset=["name"], keep="last").reset_index(drop=True)
+
+
 def _kline_figure(frame: pd.DataFrame, name: str) -> go.Figure:
     figure = go.Figure()
     figure.add_trace(
@@ -331,23 +341,58 @@ elif page == "导入持仓":
             st.rerun()
 
     st.subheader("从截图导入")
-    image_col, ocr_col = st.columns([1, 2])
-    with image_col:
-        image_file = st.file_uploader("上传截图 JPG / PNG", type=["jpg", "jpeg", "png"])
-        if image_file is not None:
-            st.image(image_file, caption="截图预览", width=320)
+
+    import_mode = st.segmented_control(
+        "导入模式",
+        options=["截图识别", "纯文本粘贴"],
+        default="截图识别",
+        key="import_mode",
+    )
 
     ocr_prefill = ""
-    if image_file is not None:
-        image_bytes = image_file.getvalue()
-        with st.spinner("正在识别截图文字..."):
-            ocr_prefill = run_ocr(image_bytes)
-        if ocr_prefill:
-            st.success(f"OCR 已识别 {len(ocr_prefill)} 个字符，可编辑后解析。")
-        else:
-            st.warning("OCR 未识别到文字，请手动粘贴。")
 
-    with ocr_col:
+    if import_mode == "截图识别":
+        image_files = st.file_uploader(
+            "上传截图 JPG / PNG（可多选）",
+            type=["jpg", "jpeg", "png"],
+            accept_multiple_files=True,
+            key="multi_screenshot",
+        )
+        if image_files:
+            all_parsed: list[pd.DataFrame] = []
+            image_col, text_col = st.columns([1, 2])
+            for idx, image_file in enumerate(image_files):
+                with image_col:
+                    st.image(image_file, caption=f"截图 {idx + 1}", width=240)
+                image_bytes = image_file.getvalue()
+                with st.spinner(f"正在识别截图 {idx + 1}..."):
+                    recognized = run_ocr(image_bytes)
+                if recognized:
+                    parsed = parse_ocr_positions(recognized)
+                    if not parsed.empty:
+                        all_parsed.append(parsed)
+                else:
+                    st.warning(f"截图 {idx + 1} 未识别到文字。")
+
+            if all_parsed:
+                merged_parsed = _merge_parsed_frames(all_parsed)
+                with text_col:
+                    st.success(f"共识别 {len(merged_parsed)} 条持仓，可编辑后确认。")
+                    edited = st.data_editor(
+                        merged_parsed,
+                        use_container_width=True,
+                        hide_index=True,
+                        key="ocr_editor",
+                    )
+                    # Convert edited DataFrame back to text for the form below
+                    ocr_prefill = "\n".join(
+                        " | ".join(str(v) for v in row if pd.notna(v))
+                        for _, row in edited.iterrows()
+                    )
+            else:
+                st.info("未从截图中识别到有效持仓，请切换到纯文本粘贴模式手动输入。")
+
+    if import_mode == "纯文本粘贴" or ocr_prefill:
         with st.form("ocr_import_form"):
             preset = st.selectbox("解析格式", ["股票截图", "基金截图", "通用"], index=0)
             ocr_text = st.text_area(
@@ -359,83 +404,80 @@ elif page == "导入持仓":
                     "基金：易方达中证500 | 5594.65 | -1.54% | -76.65 | -1.35%"
                 ),
             )
-            parse_submitted = st.form_submit_button("解析截图文本", type="primary")
+            parse_submitted = st.form_submit_button("解析并预览", type="primary")
 
-        if parse_submitted:
-            if not ocr_text.strip():
-                st.warning("请先粘贴截图 OCR 文本。")
-            else:
-                parsed = parse_ocr_positions(ocr_text)
-                summary = parse_ocr_summary(f"{preset}\n{ocr_text}")
-                st.session_state["ocr_import_parsed"] = parsed
-                st.session_state["ocr_import_summary"] = summary
-                st.session_state["ocr_import_positions"] = dataframe_to_positions(parsed)
+        if parse_submitted and ocr_text.strip():
+            parsed = parse_ocr_positions(ocr_text)
+            summary = parse_ocr_summary(f"{preset}\n{ocr_text}")
+            st.session_state["ocr_import_parsed"] = parsed
+            st.session_state["ocr_import_summary"] = summary
+            st.session_state["ocr_import_positions"] = dataframe_to_positions(parsed)
 
-        parsed = st.session_state.get("ocr_import_parsed")
-        summary = st.session_state.get("ocr_import_summary")
-        parsed_positions = st.session_state.get("ocr_import_positions", [])
-        if parsed is not None:
-            if summary:
-                summary_frame = pd.DataFrame([summary]).dropna(axis=1, how="all")
-                if not summary_frame.empty:
-                    st.dataframe(summary_frame, use_container_width=True, hide_index=True)
-            if parsed.empty:
-                st.warning("未识别到持仓行。建议保留：名称、市值、持股、现价、成本、盈亏率。")
-            else:
-                st.success(f"已识别 {len(parsed)} 条持仓。")
-                st.dataframe(parsed, use_container_width=True, hide_index=True)
-                st.download_button(
-                    "下载截图解析 JSON",
-                    json.dumps(parsed_positions, ensure_ascii=False, indent=2).encode("utf-8"),
-                    file_name="screenshot-positions.json",
-                    mime="application/json",
-                )
+    parsed = st.session_state.get("ocr_import_parsed")
+    summary = st.session_state.get("ocr_import_summary")
+    parsed_positions = st.session_state.get("ocr_import_positions", [])
+    if parsed is not None:
+        if summary:
+            summary_frame = pd.DataFrame([summary]).dropna(axis=1, how="all")
+            if not summary_frame.empty:
+                st.dataframe(summary_frame, use_container_width=True, hide_index=True)
+        if parsed.empty:
+            st.warning("未识别到持仓行。建议保留：名称、市值、持股、现价、成本、盈亏率。")
+        else:
+            st.success(f"已识别 {len(parsed)} 条持仓。")
+            st.dataframe(parsed, use_container_width=True, hide_index=True)
+            st.download_button(
+                "下载截图解析 JSON",
+                json.dumps(parsed_positions, ensure_ascii=False, indent=2).encode("utf-8"),
+                file_name="screenshot-positions.json",
+                mime="application/json",
+            )
 
-                st.divider()
-                st.subheader("更新到总览")
-                detected_account = summary.get("account_type") if summary else None
-                if not detected_account:
-                    has_shares = any(p.get("shares") for p in parsed_positions)
-                    detected_account = "stock" if has_shares else "fund"
-                account_choice = st.selectbox(
-                    "目标账户",
-                    ["fund", "stock"],
-                    index=0 if detected_account == "fund" else 1,
-                    format_func=lambda x: "支付宝基金 (fund)" if x == "fund" else "国信证券 (stock)",
-                    key="ocr_account_select",
-                )
-                target_account = portfolio["accounts"][account_choice]
-                existing_names = {p["name"] for p in target_account["positions"]}
-                imported_names = {p["name"] for p in parsed_positions}
-                update_names = existing_names & imported_names
-                new_names = imported_names - existing_names
-                with st.expander("变更预览", expanded=True):
-                    if update_names:
-                        st.write("更新数值:", ", ".join(update_names))
-                    if new_names:
-                        st.write("新增持仓:", ", ".join(new_names))
-                    st.write("保留不动:", ", ".join(existing_names - imported_names) if (existing_names - imported_names) else "无")
-                    if summary:
-                        st.json({k: v for k, v in summary.items() if v is not None and k != "account_type"})
-                if st.button("确认更新持仓", type="primary", key="ocr_update_btn"):
-                    merged_positions = merge_positions(target_account["positions"], parsed_positions)
-                    if summary:
-                        updated_account = merge_account_summary(target_account, summary)
-                    else:
-                        updated_account = dict(target_account)
-                    updated_account["positions"] = merged_positions
-                    portfolio["accounts"][account_choice] = updated_account
-                    portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
-                    save_json(ROOT / "portfolio.json", portfolio)
-                    reload_portfolio()
-                    for key in ("ocr_import_parsed", "ocr_import_summary", "ocr_import_positions"):
-                        st.session_state.pop(key, None)
-                    st.success(f"已更新 {account_choice} 持仓，共 {len(merged_positions)} 条。")
-                    st.rerun()
+            st.divider()
+            st.subheader("更新到总览")
+            detected_account = summary.get("account_type") if summary else None
+            if not detected_account:
+                has_shares = any(p.get("shares") for p in parsed_positions)
+                detected_account = "stock" if has_shares else "fund"
+            account_choice = st.selectbox(
+                "目标账户",
+                ["fund", "stock"],
+                index=0 if detected_account == "fund" else 1,
+                format_func=lambda x: "支付宝基金 (fund)" if x == "fund" else "国信证券 (stock)",
+                key="ocr_account_select",
+            )
+            target_account = portfolio["accounts"][account_choice]
+            existing_names = {p["name"] for p in target_account["positions"]}
+            imported_names = {p["name"] for p in parsed_positions}
+            update_names = existing_names & imported_names
+            new_names = imported_names - existing_names
+            with st.expander("变更预览", expanded=True):
+                if update_names:
+                    st.write("更新数值:", ", ".join(update_names))
+                if new_names:
+                    st.write("新增持仓:", ", ".join(new_names))
+                st.write("保留不动:", ", ".join(existing_names - imported_names) if (existing_names - imported_names) else "无")
+                if summary:
+                    st.json({k: v for k, v in summary.items() if v is not None and k != "account_type"})
+            if st.button("确认更新持仓", type="primary", key="ocr_update_btn"):
+                merged_positions = merge_positions(target_account["positions"], parsed_positions)
+                if summary:
+                    updated_account = merge_account_summary(target_account, summary)
+                else:
+                    updated_account = dict(target_account)
+                updated_account["positions"] = merged_positions
+                portfolio["accounts"][account_choice] = updated_account
+                portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+                save_json(ROOT / "portfolio.json", portfolio)
+                reload_portfolio()
+                for key in ("ocr_import_parsed", "ocr_import_summary", "ocr_import_positions"):
+                    st.session_state.pop(key, None)
+                st.success(f"已更新 {account_choice} 持仓，共 {len(merged_positions)} 条。")
+                st.rerun()
 
-        with st.expander("推荐粘贴格式", expanded=False):
-            st.code(
-                """# 股票截图：国信证券
+    with st.expander("推荐粘贴格式", expanded=False):
+        st.code(
+            """# 股票截图：国信证券
 总资产: 6245.08
 今日盈亏: -40.00
 持仓盈亏: -15.22
@@ -456,8 +498,8 @@ elif page == "导入持仓":
 天弘中证人工智能大仓 | 1717.05 | -2.26% | +264.36 | +18.20%
 广发中证军工ETF联接 | 1375.92 | -2.35% | -94.17 | -6.41%
 天弘中证电网设备 | 3270.40 | -3.24% | +363.23 | +12.49%""",
-                language="text",
-            )
+            language="text",
+        )
 
     with st.form("manual_position"):
         st.caption("手动录入持仓，提交后直接写入总览。")
