@@ -18,6 +18,7 @@ from quant_assistant.analytics import action_list, add_indicators, backtest_ma_t
 from quant_assistant.config import load_json, save_json
 from quant_assistant.data_provider import build_provider, collect_secids, quote_status
 from quant_assistant.importer import (
+    _infer_tag,
     dataframe_to_positions,
     merge_account_summary,
     merge_positions,
@@ -417,63 +418,106 @@ elif page == "导入持仓":
     parsed = st.session_state.get("ocr_import_parsed")
     summary = st.session_state.get("ocr_import_summary")
     parsed_positions = st.session_state.get("ocr_import_positions", [])
+
     if parsed is not None:
         if summary:
             summary_frame = pd.DataFrame([summary]).dropna(axis=1, how="all")
             if not summary_frame.empty:
                 st.dataframe(summary_frame, use_container_width=True, hide_index=True)
+
         if parsed.empty:
             st.warning("未识别到持仓行。建议保留：名称、市值、持股、现价、成本、盈亏率。")
         else:
             st.success(f"已识别 {len(parsed)} 条持仓。")
             st.dataframe(parsed, use_container_width=True, hide_index=True)
-            st.download_button(
-                "下载截图解析 JSON",
-                json.dumps(parsed_positions, ensure_ascii=False, indent=2).encode("utf-8"),
-                file_name="screenshot-positions.json",
-                mime="application/json",
-            )
 
-            st.divider()
-            st.subheader("更新到总览")
+            # Tag assignment for new positions
             detected_account = summary.get("account_type") if summary else None
             if not detected_account:
                 has_shares = any(p.get("shares") for p in parsed_positions)
                 detected_account = "stock" if has_shares else "fund"
-            account_choice = st.selectbox(
-                "目标账户",
-                ["fund", "stock"],
-                index=0 if detected_account == "fund" else 1,
-                format_func=lambda x: "支付宝基金 (fund)" if x == "fund" else "国信证券 (stock)",
-                key="ocr_account_select",
-            )
-            target_account = portfolio["accounts"][account_choice]
+
+            target_account = portfolio["accounts"][detected_account]
             existing_names = {p["name"] for p in target_account["positions"]}
             imported_names = {p["name"] for p in parsed_positions}
-            update_names = existing_names & imported_names
             new_names = imported_names - existing_names
-            with st.expander("变更预览", expanded=True):
-                if update_names:
-                    st.write("更新数值:", ", ".join(update_names))
+            update_names = existing_names & imported_names
+
+            # Tag selection for new holdings
+            tag_choices = [
+                "wide_index", "tactical_ai", "power_grid", "military",
+                "semiconductor", "robot", "overseas", "healthcare",
+                "defensive", "core_ai_dca", "imported"
+            ]
+            if new_names:
+                st.subheader("为新持仓选择策略标签")
+                for pos in parsed_positions:
+                    if pos["name"] in new_names:
+                        suggested = _infer_tag(pos["name"])
+                        idx = tag_choices.index(suggested) if suggested in tag_choices else tag_choices.index("imported")
+                        pos["tag"] = st.selectbox(
+                            f"`{pos['name']}` 的策略标签",
+                            tag_choices,
+                            index=idx,
+                            key=f"tag_select_{pos['name']}",
+                        )
+
+            st.divider()
+            st.subheader("变更预览")
+            preview_cols = st.columns(3)
+            with preview_cols[0]:
+                st.metric("新增", len(new_names))
+            with preview_cols[1]:
+                st.metric("更新", len(update_names))
+            with preview_cols[2]:
+                st.metric("保留", len(existing_names - imported_names))
+
+            with st.expander("详细对比", expanded=True):
                 if new_names:
-                    st.write("新增持仓:", ", ".join(new_names))
-                st.write("保留不动:", ", ".join(existing_names - imported_names) if (existing_names - imported_names) else "无")
-                if summary:
-                    st.json({k: v for k, v in summary.items() if v is not None and k != "account_type"})
+                    st.write("新增:", ", ".join(new_names))
+                if update_names:
+                    st.write("更新:", ", ".join(update_names))
+                unchanged = existing_names - imported_names
+                if unchanged:
+                    st.write("保留:", ", ".join(unchanged))
+
+            # History tracking integration
+            from quant_assistant.history import compute_delta, record_change
+
             if st.button("确认更新持仓", type="primary", key="ocr_update_btn"):
+                # Save snapshot before change
+                previous_snapshot = dict(target_account)
+
                 merged_positions = merge_positions(target_account["positions"], parsed_positions)
                 if summary:
                     updated_account = merge_account_summary(target_account, summary)
                 else:
                     updated_account = dict(target_account)
                 updated_account["positions"] = merged_positions
-                portfolio["accounts"][account_choice] = updated_account
+                portfolio["accounts"][detected_account] = updated_account
                 portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+                # Record change history
+                delta = compute_delta(previous_snapshot.get("positions", []), parsed_positions)
+                account_summary = {
+                    "total_assets": updated_account.get("total_assets"),
+                    "total_positions": len(merged_positions),
+                }
+                history_file = ROOT / "portfolio_history.jsonl"
+                record_change(
+                    history_file,
+                    change_type="ocr_import",
+                    account=detected_account,
+                    delta=delta,
+                    summary=account_summary,
+                    previous_snapshot=previous_snapshot,
+                )
+
                 save_json(ROOT / "portfolio.json", portfolio)
                 reload_portfolio()
-                for key in ("ocr_import_parsed", "ocr_import_summary", "ocr_import_positions"):
+                for key in ("ocr_import_parsed", "ocr_import_summary", "ocr_import_positions", "ocr_editor"):
                     st.session_state.pop(key, None)
-                st.success(f"已更新 {account_choice} 持仓，共 {len(merged_positions)} 条。")
+                st.success(f"已更新 {detected_account} 持仓，共 {len(merged_positions)} 条。变更已记录到历史。")
                 st.rerun()
 
     with st.expander("推荐粘贴格式", expanded=False):
