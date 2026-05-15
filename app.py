@@ -307,10 +307,12 @@ elif page == "导入持仓":
         )
         st.divider()
         st.subheader("更新到总览")
+        csv_has_shares = any(p.get("shares") for p in positions)
+        csv_detected = "stock" if csv_has_shares else "fund"
         csv_account_choice = st.selectbox(
             "目标账户",
             ["fund", "stock"],
-            index=0,
+            index=0 if csv_detected == "fund" else 1,
             format_func=lambda x: "支付宝基金 (fund)" if x == "fund" else "国信证券 (stock)",
             key="csv_account_select",
         )
@@ -388,6 +390,9 @@ elif page == "导入持仓":
                 st.divider()
                 st.subheader("更新到总览")
                 detected_account = summary.get("account_type") if summary else None
+                if not detected_account:
+                    has_shares = any(p.get("shares") for p in parsed_positions)
+                    detected_account = "stock" if has_shares else "fund"
                 account_choice = st.selectbox(
                     "目标账户",
                     ["fund", "stock"],
@@ -398,15 +403,14 @@ elif page == "导入持仓":
                 target_account = portfolio["accounts"][account_choice]
                 existing_names = {p["name"] for p in target_account["positions"]}
                 imported_names = {p["name"] for p in parsed_positions}
+                update_names = existing_names & imported_names
                 new_names = imported_names - existing_names
-                removed_names = existing_names - imported_names
                 with st.expander("变更预览", expanded=True):
+                    if update_names:
+                        st.write("更新数值:", ", ".join(update_names))
                     if new_names:
                         st.write("新增持仓:", ", ".join(new_names))
-                    if removed_names:
-                        st.write("将移除:", ", ".join(removed_names))
-                    if not new_names and not removed_names:
-                        st.write("持仓列表无变化，仅更新数值。")
+                    st.write("保留不动:", ", ".join(existing_names - imported_names) if (existing_names - imported_names) else "无")
                     if summary:
                         st.json({k: v for k, v in summary.items() if v is not None and k != "account_type"})
                 if st.button("确认更新持仓", type="primary", key="ocr_update_btn"):

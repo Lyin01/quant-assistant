@@ -300,25 +300,34 @@ def merge_positions(
     existing_positions: list[dict[str, Any]],
     imported_positions: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Replace positions with imported ones, preserving id/tag/market_proxy from existing."""
-    existing_by_name: dict[str, dict[str, Any]] = {}
-    for pos in existing_positions:
-        existing_by_name[pos["name"]] = pos
+    """Merge imported positions into existing ones (additive). Updates matching names, preserves unmatched."""
+    imported_by_name: dict[str, dict[str, Any]] = {}
+    for pos in imported_positions:
+        imported_by_name[pos.get("name", "")] = pos
 
     merged: list[dict[str, Any]] = []
-    for imp in imported_positions:
-        name = imp.get("name", "")
-        existing = existing_by_name.get(name)
-        if existing:
-            preserved = dict(imp)
+    used_names: set[str] = set()
+
+    for existing in existing_positions:
+        name = existing.get("name", "")
+        imp = imported_by_name.get(name)
+        if imp:
+            updated = dict(imp)
             for field in ("id", "tag", "market_proxy"):
                 if field in existing and existing[field]:
-                    preserved[field] = existing[field]
-            merged.append(preserved)
+                    updated[field] = existing[field]
+            merged.append(updated)
+            used_names.add(name)
         else:
+            merged.append(existing)
+
+    for imp in imported_positions:
+        name = imp.get("name", "")
+        if name not in used_names:
             if not imp.get("tag") or imp["tag"] == "imported":
                 imp["tag"] = _infer_tag(name)
             merged.append(imp)
+
     return merged
 
 
