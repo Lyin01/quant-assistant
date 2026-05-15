@@ -20,6 +20,7 @@ from quant_assistant.importer import (
     dataframe_to_positions,
     normalize_import_table,
     parse_ocr_positions,
+    parse_ocr_summary,
     read_uploaded_table,
     template_frame,
 )
@@ -277,24 +278,80 @@ elif page == "导入持仓":
         )
 
     st.subheader("从截图导入")
-    image_file = st.file_uploader("上传截图 JPG / PNG", type=["jpg", "jpeg", "png"])
-    if image_file is not None:
-        st.image(image_file, caption="截图预览", use_container_width=True)
-        st.caption("图片 OCR 结果会受券商页面排版影响。可先用手机/微信识别图片文字，再粘贴到下面解析。")
+    image_col, ocr_col = st.columns([1, 2])
+    with image_col:
+        image_file = st.file_uploader("上传截图 JPG / PNG", type=["jpg", "jpeg", "png"])
+        if image_file is not None:
+            st.image(image_file, caption="截图预览", width=320)
+        st.caption("图片只做小预览。先用手机/微信识别文字，再粘到右侧解析。")
 
-    ocr_text = st.text_area("粘贴截图 OCR 文本", height=160, placeholder="示例：半导体 200.30 100 2.003 -6.80 -3.28%")
-    if st.button("解析截图文本") and ocr_text.strip():
-        parsed = parse_ocr_positions(ocr_text)
-        parsed_positions = dataframe_to_positions(parsed)
-        if parsed.empty:
-            st.warning("未识别到持仓行。建议保留：名称、市值、持股、现价、成本、盈亏率。")
-        else:
-            st.dataframe(parsed, use_container_width=True, hide_index=True)
-            st.download_button(
-                "下载截图解析 JSON",
-                json.dumps(parsed_positions, ensure_ascii=False, indent=2).encode("utf-8"),
-                file_name="screenshot-positions.json",
-                mime="application/json",
+    with ocr_col:
+        with st.form("ocr_import_form"):
+            preset = st.selectbox("解析格式", ["股票截图", "基金截图", "通用"], index=0)
+            ocr_text = st.text_area(
+                "粘贴截图 OCR 文本",
+                height=180,
+                placeholder=(
+                    "股票：半导体 | 203.50 | 100 | 100 | 2.035 | 2.071 | -3.60 | -1.74%\n"
+                    "基金：易方达中证500 | 5594.65 | -1.54% | -76.65 | -1.35%"
+                ),
+            )
+            parse_submitted = st.form_submit_button("解析截图文本", type="primary")
+
+        if parse_submitted:
+            if not ocr_text.strip():
+                st.warning("请先粘贴截图 OCR 文本。")
+            else:
+                parsed = parse_ocr_positions(ocr_text)
+                summary = parse_ocr_summary(f"{preset}\n{ocr_text}")
+                st.session_state["ocr_import_parsed"] = parsed
+                st.session_state["ocr_import_summary"] = summary
+                st.session_state["ocr_import_positions"] = dataframe_to_positions(parsed)
+
+        parsed = st.session_state.get("ocr_import_parsed")
+        summary = st.session_state.get("ocr_import_summary")
+        parsed_positions = st.session_state.get("ocr_import_positions", [])
+        if parsed is not None:
+            if summary:
+                summary_frame = pd.DataFrame([summary]).dropna(axis=1, how="all")
+                if not summary_frame.empty:
+                    st.dataframe(summary_frame, use_container_width=True, hide_index=True)
+            if parsed.empty:
+                st.warning("未识别到持仓行。建议保留：名称、市值、持股、现价、成本、盈亏率。")
+            else:
+                st.success(f"已识别 {len(parsed)} 条持仓。")
+                st.dataframe(parsed, use_container_width=True, hide_index=True)
+                st.download_button(
+                    "下载截图解析 JSON",
+                    json.dumps(parsed_positions, ensure_ascii=False, indent=2).encode("utf-8"),
+                    file_name="screenshot-positions.json",
+                    mime="application/json",
+                )
+
+        with st.expander("推荐粘贴格式", expanded=False):
+            st.code(
+                """# 股票截图：国信证券
+总资产: 6245.08
+今日盈亏: -40.00
+持仓盈亏: -15.22
+总市值: 4600.80
+可用: 1644.28
+沃尔核材 | 2249.00 | 100 | 100 | 22.490 | 23.000 | -51.02 | -2.22%
+纳指大成 | 1559.70 | 900 | 900 | 1.733 | 1.725 | +7.60 | +0.49%
+创新药 | 239.40 | 300 | 300 | 0.798 | 0.825 | -8.00 | -3.23%
+半导体 | 203.50 | 100 | 100 | 2.035 | 2.071 | -3.60 | -1.74%
+
+# 基金截图：支付宝
+账户资产: 18118.73
+场内穿透: -228.25
+博时标普500ETF联接 | 109.18 | +0.77% | +9.18 | +9.18%
+华宝纳斯达克精选 | 3145.75 | +0.97% | +269.53 | +9.37%
+易方达中证500 | 5594.65 | -1.54% | -76.65 | -1.35%
+天弘中证人工智能定投小仓 | 459.98 | -2.26% | +59.98 | +14.99%
+天弘中证人工智能大仓 | 1717.05 | -2.26% | +264.36 | +18.20%
+广发中证军工ETF联接 | 1375.92 | -2.35% | -94.17 | -6.41%
+天弘中证电网设备 | 3270.40 | -3.24% | +363.23 | +12.49%""",
+                language="text",
             )
 
     with st.form("manual_position"):

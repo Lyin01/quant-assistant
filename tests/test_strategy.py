@@ -1,7 +1,7 @@
 from quant_assistant.config import load_json
 from quant_assistant.strategy import generate_recommendations
 from quant_assistant.analytics import action_list, add_indicators, backtest_ma_trend, latest_signal
-from quant_assistant.importer import parse_ocr_positions
+from quant_assistant.importer import parse_ocr_positions, parse_ocr_summary
 import pandas as pd
 
 
@@ -103,12 +103,35 @@ def test_analytics_pipeline():
 def test_parse_ocr_positions():
     frame = parse_ocr_positions(
         """
-        半导体 200.30 100 2.003 -6.80 -3.28%
-        机器人 341.10 300 1.137 +31.70 +10.25%
+        半导体 | 203.50 | 100 | 100 | 2.035 | 2.071 | -3.60 | -1.74%
+        机器人 | 349.20 | 300 | 300 | 1.164 | 1.031 | +39.90 | +12.90%
         """
     )
 
     assert list(frame["name"]) == ["半导体", "机器人"]
     assert list(frame["tag"]) == ["semiconductor", "robot"]
-    assert frame.loc[0, "market_value"] == 200.30
-    assert frame.loc[1, "holding_pnl_pct"] == 10.25
+    assert frame.loc[0, "market_value"] == 203.50
+    assert frame.loc[0, "shares"] == 100
+    assert frame.loc[0, "price"] == 2.035
+    assert frame.loc[0, "cost"] == 2.071
+    assert frame.loc[0, "holding_pnl"] == -3.60
+    assert frame.loc[1, "holding_pnl_pct"] == 12.90
+
+
+def test_parse_fund_ocr_format_and_summary():
+    text = """
+    账户资产: 18118.73
+    场内穿透: -228.25
+    易方达中证500 | 5594.65 | -1.54% | -76.65 | -1.35%
+    天弘中证电网设备 | 3270.40 | -3.24% | +363.23 | +12.49%
+    """
+    summary = parse_ocr_summary(text)
+    frame = parse_ocr_positions(text)
+
+    assert summary["account_type"] == "fund"
+    assert summary["total_assets"] == 18118.73
+    assert summary["today_pnl"] == -228.25
+    assert list(frame["name"]) == ["易方达中证500", "天弘中证电网设备"]
+    assert frame.loc[0, "last_daily_pct"] == -1.54
+    assert frame.loc[0, "holding_pnl"] == -76.65
+    assert frame.loc[1, "holding_pnl_pct"] == 12.49

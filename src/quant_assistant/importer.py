@@ -20,6 +20,15 @@ PORTFOLIO_COLUMNS = [
     "last_daily_pct",
 ]
 
+SUMMARY_COLUMNS = [
+    "account_type",
+    "total_assets",
+    "today_pnl",
+    "holding_pnl",
+    "market_value",
+    "available_cash",
+]
+
 
 def read_uploaded_table(file_name: str, content: bytes) -> pd.DataFrame:
     lower = file_name.lower()
@@ -95,6 +104,33 @@ def parse_ocr_positions(text: str) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=PORTFOLIO_COLUMNS)
 
 
+def parse_ocr_summary(text: str) -> dict[str, Any]:
+    summary: dict[str, Any] = {column: None for column in SUMMARY_COLUMNS}
+    lowered = text.lower()
+    if "股票/基金" in text or "国信证券" in text or "总市值" in text or "可用" in text:
+        summary["account_type"] = "stock"
+    elif "支付宝" in text or "基金" in text or "账户资产" in text:
+        summary["account_type"] = "fund"
+
+    patterns = {
+        "total_assets": ["总资产", "账户资产", "基金资产", "股票资产"],
+        "today_pnl": ["今日盈亏", "当日收益", "场内穿透"],
+        "holding_pnl": ["持仓盈亏", "持有收益"],
+        "market_value": ["总市值"],
+        "available_cash": ["可用", "股票可用"],
+    }
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        for target, keywords in patterns.items():
+            if any(keyword in line for keyword in keywords):
+                numbers = _numbers_from_line(line)
+                if numbers:
+                    summary[target] = numbers[-1]
+    return summary
+
+
 def template_frame() -> pd.DataFrame:
     return pd.DataFrame(
         [
@@ -135,19 +171,44 @@ def _name_from_line(line: str) -> str | None:
 
     name_parts = []
     for token in tokens:
-        if _numbers_from_line(token):
+        if _is_numeric_token(token):
             break
         if re.search(r"[\u4e00-\u9fffA-Za-z]", token):
             name_parts.append(token)
     name = "".join(name_parts).strip()
-    if not name or name in {"名称", "持仓", "市值", "现价", "成本", "持仓盈亏", "今日盈亏"}:
+    summary_names = {
+        "名称",
+        "持仓",
+        "市值",
+        "现价",
+        "成本",
+        "账户资产",
+        "基金资产",
+        "股票资产",
+        "总资产",
+        "总资产元",
+        "今日盈亏",
+        "当日收益",
+        "场内穿透",
+        "持仓盈亏",
+        "持有收益",
+        "总市值",
+        "可用",
+    }
+    if not name or name in summary_names:
         return None
     return name[:40]
 
 
+def _is_numeric_token(token: str) -> bool:
+    cleaned = token.replace(",", "").replace("%", "").strip()
+    return bool(re.fullmatch(r"[-+]?\d+(?:\.\d+)?", cleaned))
+
+
 def _numbers_from_line(line: str) -> list[float]:
     values = []
-    for match in re.finditer(r"[-+]?\d+(?:,\d{3})*(?:\.\d+)?%?", line):
+    number_pattern = r"(?<![A-Za-z0-9_\u4e00-\u9fff])[-+]?\d+(?:,\d{3})*(?:\.\d+)?%?(?![A-Za-z0-9_\u4e00-\u9fff])"
+    for match in re.finditer(number_pattern, line):
         raw = match.group(0).replace(",", "").replace("%", "")
         try:
             values.append(float(raw))
@@ -162,6 +223,27 @@ def _position_row(name: str, numbers: list[float], source: str) -> dict[str, Any
     row["tag"] = _infer_tag(name)
     row["market_value"] = numbers[0] if numbers else None
 
+    percent_values = re.findall(r"[-+]?\d+(?:\.\d+)?%", source)
+    if len(numbers) >= 7:
+        row["shares"] = numbers[1]
+        row["price"] = numbers[3]
+        row["cost"] = numbers[4]
+        row["holding_pnl"] = numbers[-2]
+    elif len(numbers) == 6:
+        row["shares"] = numbers[1]
+        row["price"] = numbers[2]
+        row["cost"] = numbers[3]
+        row["holding_pnl"] = numbers[4]
+    elif len(numbers) == 5:
+        row["shares"] = numbers[1]
+        row["price"] = numbers[2]
+        row["holding_pnl"] = numbers[-2]
+    elif len(numbers) == 4 and len(percent_values) >= 2:
+        row["last_daily_pct"] = numbers[1]
+        row["holding_pnl"] = numbers[2]
+    elif len(numbers) == 3 and percent_values:
+        row["holding_pnl"] = numbers[1]
+
     if len(numbers) >= 2 and _looks_like_shares(source):
         row["shares"] = numbers[1]
     if len(numbers) >= 3 and _looks_like_price_cost(source):
@@ -169,7 +251,6 @@ def _position_row(name: str, numbers: list[float], source: str) -> dict[str, Any
     if len(numbers) >= 4 and _looks_like_price_cost(source):
         row["cost"] = numbers[3]
 
-    percent_values = re.findall(r"[-+]?\d+(?:\.\d+)?%", source)
     if percent_values:
         row["holding_pnl_pct"] = float(percent_values[-1].replace("%", ""))
     elif len(numbers) >= 2 and abs(numbers[-1]) <= 100:
