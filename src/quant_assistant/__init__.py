@@ -12,4 +12,5 @@ __all__ = [
     "market_data",
     "strategy",
     "strategy_engine",
+    "user_data",
 ]

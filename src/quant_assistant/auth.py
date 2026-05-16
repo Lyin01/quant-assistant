@@ -72,7 +72,7 @@ def _is_allowed(user_info: dict[str, Any]) -> bool:
 
 def _render_login() -> None:
     st.title("Quant Assistant")
-    st.info("请先登录以查看个人持仓数据。此应用仅供个人使用。")
+    st.info("请先登录以管理个人持仓数据。")
 
     has_any = False
 
@@ -104,6 +104,7 @@ def _render_login() -> None:
                 email = user.get("email") or _get_github_email(access_token) or ""
                 user_info = {
                     "provider": "github",
+                    "id": str(user.get("id", "")),
                     "name": user.get("login", ""),
                     "email": email,
                     "avatar": user.get("avatar_url", ""),
@@ -113,6 +114,8 @@ def _render_login() -> None:
                     st.rerun()
                 else:
                     st.error(f"账号 {user_info['name']} ({email}) 未被授权访问此应用。")
+            else:
+                st.error("无法获取 GitHub 用户信息，请重试。")
 
     google_cfg = st.secrets.get("oauth", {}).get("google", {})
     if google_cfg.get("client_id"):
@@ -142,6 +145,7 @@ def _render_login() -> None:
             if user:
                 user_info = {
                     "provider": "google",
+                    "id": str(payload.get("sub", "")),
                     "name": user.get("name", ""),
                     "email": user.get("email", ""),
                     "avatar": user.get("picture", ""),

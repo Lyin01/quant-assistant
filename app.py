@@ -25,8 +25,8 @@ from quant_assistant.analytics_panel import (
 )
 from quant_assistant.auth import require_auth
 from quant_assistant.data_source_health import read_health, summarize_by_provider
-from quant_assistant.config import load_json, save_json
 from quant_assistant.data_provider import build_provider, collect_secids, quote_status
+from quant_assistant.user_data import get_or_create_portfolio, load_config, save_portfolio, user_history_file
 from quant_assistant.importer import (
     _infer_tag,
     dataframe_to_positions,
@@ -44,17 +44,26 @@ from quant_assistant.strategy import generate_recommendations
 
 st.set_page_config(page_title="Quant Assistant", layout="wide")
 
-config = load_json(ROOT / "config.json")
-portfolio = load_json(ROOT / "portfolio.json")
+require_auth()
+
+user = st.session_state.get("oauth_user", {})
+portfolio = get_or_create_portfolio(user)
+config = load_config(user)
 fund = portfolio["accounts"]["fund"]
 stock = portfolio["accounts"]["stock"]
 options = instrument_options(config)
 
-require_auth()
+
+def _current_user_id() -> str:
+    provider = user.get("provider", "unknown")
+    uid = user.get("id") or user.get("email", "anonymous")
+    return f"{provider}_{uid}"
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def cached_quotes(config_data: dict, portfolio_data: dict):
+def cached_quotes(user_id: str, config_json: str, portfolio_json: str):
+    config_data = json.loads(config_json)
+    portfolio_data = json.loads(portfolio_json)
     provider = build_provider(config_data)
     secids = collect_secids(config_data, portfolio_data)
     return provider.get_quotes_with_status(secids)
@@ -90,7 +99,7 @@ def run_ocr(image_bytes: bytes) -> str:
 
 def reload_portfolio() -> None:
     global portfolio, fund, stock
-    portfolio = load_json(ROOT / "portfolio.json")
+    portfolio = get_or_create_portfolio(user)
     fund = portfolio["accounts"]["fund"]
     stock = portfolio["accounts"]["stock"]
     cached_quotes.clear()
@@ -198,7 +207,7 @@ if page == "总览":
         cached_quotes.clear()
 
     with st.spinner("正在获取行情..."):
-        quotes, quote_messages = cached_quotes(config, portfolio)
+        quotes, quote_messages = cached_quotes(_current_user_id(), json.dumps(config), json.dumps(portfolio))
 
     if quotes:
         latest_time = max((q.time_text for q in quotes.values() if q.time_text), default="")
@@ -248,7 +257,7 @@ if page == "总览":
     with st.expander("持仓变更记录"):
         from quant_assistant.history import read_history, rollback
 
-        history_file = ROOT / "portfolio_history.jsonl"
+        history_file = user_history_file(user)
         history = read_history(history_file, limit=10)
 
         if not history:
@@ -292,7 +301,7 @@ if page == "总览":
                     if account_key and account_key in portfolio["accounts"]:
                         portfolio["accounts"][account_key] = restored
                         portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
-                        save_json(ROOT / "portfolio.json", portfolio)
+                        save_portfolio(user, portfolio)
                         reload_portfolio()
                         st.success(f"已撤销上次导入，{account_key} 持仓已恢复。")
                         st.rerun()
@@ -442,7 +451,7 @@ elif page == "导入持仓":
                 "total_positions": len(merged),
             }
             record_change(
-                ROOT / "portfolio_history.jsonl",
+                user_history_file(user),
                 change_type="csv_import",
                 account=csv_account_choice,
                 delta=delta,
@@ -450,7 +459,7 @@ elif page == "导入持仓":
                 previous_snapshot=previous_snapshot,
             )
 
-            save_json(ROOT / "portfolio.json", portfolio)
+            save_portfolio(user, portfolio)
             reload_portfolio()
             st.success(f"已更新 {csv_account_choice} 持仓，共 {len(merged)} 条。变更已记录到历史。")
             st.rerun()
@@ -617,7 +626,7 @@ elif page == "导入持仓":
                     "total_assets": updated_account.get("total_assets"),
                     "total_positions": len(merged_positions),
                 }
-                history_file = ROOT / "portfolio_history.jsonl"
+                history_file = user_history_file(user)
                 record_change(
                     history_file,
                     change_type="ocr_import",
@@ -627,7 +636,7 @@ elif page == "导入持仓":
                     previous_snapshot=previous_snapshot,
                 )
 
-                save_json(ROOT / "portfolio.json", portfolio)
+                save_portfolio(user, portfolio)
                 reload_portfolio()
                 for key in ("ocr_import_parsed", "ocr_import_summary", "ocr_import_positions", "ocr_editor"):
                     st.session_state.pop(key, None)
@@ -681,7 +690,7 @@ elif page == "导入持仓":
             merged = merge_positions(target["positions"], [new_position])
             target["positions"] = merged
             portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
-            save_json(ROOT / "portfolio.json", portfolio)
+            save_portfolio(user, portfolio)
             reload_portfolio()
             st.success(f"已添加 {manual_name} 到 {manual_account}，共 {len(merged)} 条持仓。")
             st.rerun()
@@ -701,7 +710,7 @@ elif page == "分析":
         st.info("暂无持仓数据。")
 
     st.subheader("累计收益曲线")
-    history_file = ROOT / "portfolio_history.jsonl"
+    history_file = user_history_file(user)
     hist_df = load_portfolio_history(history_file)
     if not hist_df.empty and len(hist_df) >= 2:
         curve = compute_return_curve(hist_df)
