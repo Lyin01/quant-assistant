@@ -144,11 +144,12 @@ def _kline_figure(frame: pd.DataFrame, name: str) -> go.Figure:
     )
     for column in ["ma20", "ma60"]:
         if column in frame.columns:
-            figure.add_trace(go.Scatter(x=frame["date"], y=frame[column], mode="lines", name=column.upper()))
+            label = "MA20" if column == "ma20" else "MA60"
+            figure.add_trace(go.Scatter(x=frame["date"], y=frame[column], mode="lines", name=label))
     # Bollinger Bands
     for column in ["bb_upper", "bb_lower"]:
         if column in frame.columns:
-            label = "BB Upper" if column == "bb_upper" else "BB Lower"
+            label = "布林上轨" if column == "bb_upper" else "布林下轨"
             figure.add_trace(
                 go.Scatter(
                     x=frame["date"],
@@ -325,7 +326,16 @@ elif page == "历史 K 线":
             enriched = add_indicators(history)
             enriched = add_advanced_indicators(enriched)
             st.plotly_chart(_kline_figure(enriched, name), use_container_width=True)
-            st.dataframe(enriched.tail(120), use_container_width=True, hide_index=True)
+            display_cols = {
+                "date": "日期", "open": "开盘", "high": "最高", "low": "最低",
+                "close": "收盘", "volume": "成交量", "amount": "成交额",
+                "ma5": "MA5", "ma20": "MA20", "ma60": "MA60",
+                "macd": "MACD", "macd_signal": "MACD信号", "macd_hist": "MACD柱状",
+                "rsi14": "RSI14", "bb_upper": "布林上轨", "bb_lower": "布林下轨", "bb_middle": "布林中轨",
+                "high_20": "20日最高", "drawdown_20_pct": "20日回撤%", "drawdown_pct": "最大回撤%",
+            }
+            display_frame = enriched.rename(columns={k: v for k, v in display_cols.items() if k in enriched.columns})
+            st.dataframe(display_frame.tail(120), use_container_width=True, hide_index=True)
         with st.expander("历史数据源状态", expanded=history.empty):
             for message in messages:
                 st.write(message)

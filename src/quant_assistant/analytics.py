@@ -52,7 +52,7 @@ def add_advanced_indicators(frame: pd.DataFrame) -> pd.DataFrame:
 def latest_signal(frame: pd.DataFrame) -> dict[str, Any]:
     data = add_indicators(frame)
     if data.empty:
-        return {"signal": "NO_DATA", "reason": "没有历史数据。"}
+        return {"signal": "无数据", "reason": "没有历史数据。"}
 
     latest = data.iloc[-1]
     close = float(latest["close"])
@@ -62,25 +62,25 @@ def latest_signal(frame: pd.DataFrame) -> dict[str, Any]:
 
     if ma20 is None or ma60 is None:
         return {
-            "signal": "WAIT",
+            "signal": "等待数据",
             "reason": "历史数据不足 60 日，暂不生成均线信号。",
             "close": close,
         }
 
     if close > ma20 > ma60 and drawdown is not None and drawdown > -2:
-        signal = "TREND_UP"
+        signal = "趋势向上"
         reason = "收盘价在 MA20 / MA60 上方，趋势偏强，不追涨。"
     elif close > ma60 and drawdown is not None and -6 <= drawdown <= -3:
-        signal = "PULLBACK_BUY_ZONE"
+        signal = "低吸观察"
         reason = "价格仍在 MA60 上方，20 日回撤约 3%-6%，进入低吸观察区。"
     elif close < ma20 and close > ma60:
-        signal = "COOLDOWN"
+        signal = "冷却等待"
         reason = "跌破 MA20 但仍在 MA60 上方，等待企稳。"
     elif close < ma60:
-        signal = "RISK_OFF"
+        signal = "防守观望"
         reason = "跌破 MA60，先防守，不做主动加仓。"
     else:
-        signal = "NEUTRAL"
+        signal = "信号中性"
         reason = "信号中性，等待更明确的价格位置。"
 
     return {
