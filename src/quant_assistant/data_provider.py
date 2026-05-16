@@ -191,26 +191,26 @@ class AutoProvider:
     def get_quotes_with_status(self, secids: list[str]) -> tuple[dict[str, Quote], list[str]]:
         requested = len(secids)
 
-        # AkShare
+        # EastMoney first (single HTTP request, fast and reliable)
         start = time.perf_counter()
-        quotes, messages = self.akshare.get_quotes_with_status(secids)
+        quotes, messages = self.eastmoney.get_quotes_with_status(secids)
         latency_ms = (time.perf_counter() - start) * 1000
         success = len(quotes)
-        record_request("akshare", requested=requested, success=success, failed=requested - success, latency_ms=latency_ms)
+        record_request("eastmoney", requested=requested, success=success, failed=requested - success, latency_ms=latency_ms)
 
         missing_secids = sorted(set(secids) - set(quotes))
         if quotes and not missing_secids:
             return quotes, messages
 
-        # EastMoney fallback
-        eastmoney_targets = missing_secids if quotes else secids
+        # AkShare fallback (slow, pulls full datasets)
+        akshare_targets = missing_secids if quotes else secids
         start = time.perf_counter()
-        fallback_quotes, fallback_messages = self.eastmoney.get_quotes_with_status(eastmoney_targets)
+        akshare_quotes, akshare_messages = self.akshare.get_quotes_with_status(akshare_targets)
         latency_ms = (time.perf_counter() - start) * 1000
-        success = len(fallback_quotes)
-        record_request("eastmoney", requested=len(eastmoney_targets), success=success, failed=len(eastmoney_targets) - success, latency_ms=latency_ms)
-        quotes.update(fallback_quotes)
-        messages += fallback_messages
+        success = len(akshare_quotes)
+        record_request("akshare", requested=len(akshare_targets), success=success, failed=len(akshare_targets) - success, latency_ms=latency_ms)
+        quotes.update(akshare_quotes)
+        messages += akshare_messages
 
         missing_secids = sorted(set(secids) - set(quotes))
         if missing_secids:

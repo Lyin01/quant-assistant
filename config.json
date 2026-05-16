@@ -1,7 +1,7 @@
 {
   "market_provider": {
     "name": "auto",
-    "timeout_seconds": 8,
+    "timeout_seconds": 5,
     "use_live_proxy_for_decisions": true
   },
   "cash_plan": {
