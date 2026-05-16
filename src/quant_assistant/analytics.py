@@ -109,13 +109,16 @@ def backtest_ma_trend(frame: pd.DataFrame, fast: int = 20, slow: int = 60) -> tu
     data["trade"] = data["position"].diff().abs().fillna(0)
 
     metrics = {
-        "strategy_return_pct": (float(data["equity"].iloc[-1]) - 1) * 100,
-        "buy_hold_return_pct": (float(data["buy_hold"].iloc[-1]) - 1) * 100,
-        "max_drawdown_pct": _max_drawdown(data["equity"]) * 100,
-        "trades": float(data["trade"].sum()),
-        "days": float(len(data)),
+        "策略收益": (float(data["equity"].iloc[-1]) - 1) * 100,
+        "持有收益": (float(data["buy_hold"].iloc[-1]) - 1) * 100,
+        "最大回撤": _max_drawdown(data["equity"]) * 100,
+        "交易次数": float(data["trade"].sum()),
+        "天数": float(len(data)),
     }
-    return data, metrics
+
+    result = data[["date", "close", "fast_ma", "slow_ma", "signal", "equity", "buy_hold"]].copy()
+    result.columns = ["日期", "收盘价", "快线MA", "慢线MA", "信号", "策略净值", "持有净值"]
+    return result, metrics
 
 
 def action_list(recommendations: list[dict[str, str]]) -> pd.DataFrame:

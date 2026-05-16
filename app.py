@@ -382,11 +382,11 @@ elif page == "回测":
             st.warning("历史数据不足，无法回测。")
         else:
             m1, m2, m3, m4 = st.columns(4)
-            m1.metric("策略收益", _fmt(metrics.get("strategy_return_pct"), "%"))
-            m2.metric("持有收益", _fmt(metrics.get("buy_hold_return_pct"), "%"))
-            m3.metric("最大回撤", _fmt(metrics.get("max_drawdown_pct"), "%"))
-            m4.metric("交易次数", f'{metrics.get("trades", 0):.0f}')
-            st.line_chart(bt_curve.set_index("date")[["equity", "buy_hold"]])
+            m1.metric("策略收益", _fmt(metrics.get("策略收益"), "%"))
+            m2.metric("持有收益", _fmt(metrics.get("持有收益"), "%"))
+            m3.metric("最大回撤", _fmt(metrics.get("最大回撤"), "%"))
+            m4.metric("交易次数", f'{metrics.get("交易次数", 0):.0f}')
+            st.line_chart(bt_curve.set_index("日期")[["策略净值", "持有净值"]])
             st.dataframe(bt_curve.tail(120), use_container_width=True, hide_index=True)
         with st.expander("回测数据源状态", expanded=bt_curve.empty):
             for message in bt_messages:

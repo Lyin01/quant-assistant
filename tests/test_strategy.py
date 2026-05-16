@@ -96,7 +96,7 @@ def test_analytics_pipeline():
     assert "ma20" in enriched.columns
     assert signal["signal"] in {"TREND_UP", "PULLBACK_BUY_ZONE", "COOLDOWN", "RISK_OFF", "NEUTRAL", "WAIT"}
     assert not curve.empty
-    assert "strategy_return_pct" in metrics
+    assert "策略收益" in metrics
     assert len(actions) == 1
 
 

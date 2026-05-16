@@ -88,18 +88,34 @@ def fetch_history(
 
 
 def fetch_etf_ranking(limit: int = 30) -> tuple[pd.DataFrame, list[str]]:
+    # EastMoney is faster (only fetches ranked data); use it first.
+    try:
+        frame = _fetch_eastmoney_etf_ranking(limit)
+    except Exception as exc:
+        return _akshare_etf_ranking_or_empty(limit, [f"EastMoney ETF ranking failed: {exc}"])
+
+    if not frame.empty:
+        return frame, [f"EastMoney ETF ranking: {len(frame)} rows."]
+
+    return _akshare_etf_ranking_or_empty(limit, ["EastMoney ETF ranking returned no rows."])
+
+
+def _akshare_etf_ranking_or_empty(limit: int, messages: list[str]) -> tuple[pd.DataFrame, list[str]]:
     try:
         import akshare as ak
     except Exception as exc:
-        return _eastmoney_etf_ranking_or_empty(limit, [f"AkShare import failed: {exc}"])
+        messages.append(f"AkShare import failed: {exc}")
+        return pd.DataFrame(), messages
 
     try:
         frame = ak.fund_etf_spot_em()
     except Exception as exc:
-        return _eastmoney_etf_ranking_or_empty(limit, [f"AkShare ETF ranking failed: {exc}"])
+        messages.append(f"AkShare ETF ranking failed: {exc}")
+        return pd.DataFrame(), messages
 
     if frame is None or frame.empty:
-        return pd.DataFrame(), ["AkShare ETF ranking returned no rows."]
+        messages.append("AkShare ETF ranking returned no rows.")
+        return pd.DataFrame(), messages
 
     columns = {
         "代码": "code",
@@ -116,7 +132,8 @@ def fetch_etf_ranking(limit: int = 30) -> tuple[pd.DataFrame, list[str]]:
     if "pct" in ranking.columns:
         ranking["pct"] = pd.to_numeric(ranking["pct"], errors="coerce")
         ranking = ranking.sort_values("pct", ascending=False)
-    return ranking.head(limit).reset_index(drop=True), [f"AkShare ETF ranking: {len(ranking)} rows."]
+    messages.append(f"AkShare ETF ranking: {len(ranking)} rows.")
+    return ranking.head(limit).reset_index(drop=True), messages
 
 
 def normalize_history(frame: pd.DataFrame) -> pd.DataFrame:
@@ -286,17 +303,6 @@ def _fetch_tencent_history(secid: str, start: date, end: date, adjust: str) -> p
             }
         )
     return _filter_dates(normalize_history(pd.DataFrame(parsed_rows)), start, end)
-
-
-def _eastmoney_etf_ranking_or_empty(limit: int, messages: list[str]) -> tuple[pd.DataFrame, list[str]]:
-    try:
-        frame = _fetch_eastmoney_etf_ranking(limit)
-    except Exception as exc:
-        messages.append(f"EastMoney ETF ranking fallback failed: {exc}")
-        return pd.DataFrame(), messages
-
-    messages.append(f"EastMoney ETF ranking fallback: {len(frame)} rows.")
-    return frame, messages
 
 
 def _fetch_eastmoney_etf_ranking(limit: int) -> pd.DataFrame:
