@@ -35,7 +35,7 @@ def fetch_policy_news(limit: int = 50) -> tuple[pd.DataFrame, list[str]]:
     cache_key = f"policy_news_{limit}"
     cached = load_generic_cache(cache_key)
     if cached is not None:
-        return cached, ["Policy: cache hit"]
+        return pd.DataFrame(cached), ["Policy: cache hit"]
 
     messages: list[str] = []
     all_news: list[dict[str, str]] = []
