@@ -46,19 +46,6 @@ def _get_github_email(access_token: str) -> str | None:
         return None
 
 
-def _get_google_user(id_token: str) -> dict[str, Any] | None:
-    try:
-        import jwt
-        payload = jwt.decode(id_token, options={"verify_signature": False})
-        return {
-            "name": payload.get("name"),
-            "email": payload.get("email"),
-            "picture": payload.get("picture"),
-        }
-    except Exception:
-        return None
-
-
 def _is_allowed(user_info: dict[str, Any]) -> bool:
     allowed = st.secrets.get("oauth", {}).get("allowed", [])
     if not allowed:
@@ -116,45 +103,6 @@ def _render_login() -> None:
                     st.error(f"账号 {user_info['name']} ({email}) 未被授权访问此应用。")
             else:
                 st.error("无法获取 GitHub 用户信息，请重试。")
-
-    google_cfg = st.secrets.get("oauth", {}).get("google", {})
-    if google_cfg.get("client_id"):
-        has_any = True
-        try:
-            from streamlit_oauth import OAuth2Component
-        except ImportError:
-            st.error("streamlit-oauth 未安装，无法使用 Google 登录。")
-            return
-
-        google = OAuth2Component(
-            client_id=google_cfg["client_id"],
-            client_secret=google_cfg["client_secret"],
-            authorize_endpoint="https://accounts.google.com/o/oauth2/v2/auth",
-            token_endpoint="https://oauth2.googleapis.com/token",
-            revoke_token_endpoint="https://oauth2.googleapis.com/revoke",
-        )
-        result = google.authorize_button(
-            "使用 Google 登录",
-            google_cfg.get("redirect_uri", "http://localhost:8501"),
-            scope="openid email profile",
-            key="google_login",
-        )
-        if result and "token" in result:
-            id_token = result["token"].get("id_token")
-            user = _get_google_user(id_token)
-            if user:
-                user_info = {
-                    "provider": "google",
-                    "id": str(payload.get("sub", "")),
-                    "name": user.get("name", ""),
-                    "email": user.get("email", ""),
-                    "avatar": user.get("picture", ""),
-                }
-                if _is_allowed(user_info):
-                    st.session_state["oauth_user"] = user_info
-                    st.rerun()
-                else:
-                    st.error(f"邮箱 {user_info['email']} 未被授权访问此应用。")
 
     if not has_any:
         st.warning("OAuth 登录未配置。请在 Streamlit Secrets 中设置 client_id。")

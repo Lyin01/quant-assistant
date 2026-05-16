@@ -8,6 +8,10 @@ import pandas as pd
 
 from .disk_cache import load_generic_cache, save_generic_cache
 
+try:
+    import akshare as ak
+except ImportError:
+    ak = None  # type: ignore[assignment]
 
 MACRO_CACHE_KEY = "macro_indicators"
 
@@ -23,7 +27,8 @@ def _safe_float(value: object) -> float | None:
 
 def _fetch_akshare_indicator(fetcher: str, column: str | None = None) -> tuple[float | None, str]:
     try:
-        import akshare as ak
+        if ak is None:
+            return None, "akshare not installed"
         fn = getattr(ak, fetcher)
         df = fn()
         if df is None or df.empty:
@@ -46,7 +51,6 @@ def fetch_macro_indicators() -> tuple[dict[str, Any], list[str]]:
 
     # China & US 10Y bond yields via akshare
     try:
-        import akshare as ak
         bond_df = ak.bond_zh_us_rate()
         if bond_df is not None and not bond_df.empty:
             last = bond_df.iloc[-1]
@@ -74,7 +78,6 @@ def fetch_macro_indicators() -> tuple[dict[str, Any], list[str]]:
 
     # China CPI YoY
     try:
-        import akshare as ak
         cpi_df = ak.macro_china_cpi()
         if cpi_df is not None and not cpi_df.empty:
             indicators["cn_cpi_yoy"] = _safe_float(cpi_df.iloc[-1].get("今值"))
@@ -86,7 +89,6 @@ def fetch_macro_indicators() -> tuple[dict[str, Any], list[str]]:
 
     # US CPI YoY
     try:
-        import akshare as ak
         cpi_df = ak.macro_usa_cpi()
         if cpi_df is not None and not cpi_df.empty:
             indicators["us_cpi_yoy"] = _safe_float(cpi_df.iloc[-1].get("今值"))

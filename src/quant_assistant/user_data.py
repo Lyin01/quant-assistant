@@ -28,9 +28,12 @@ DEFAULT_PORTFOLIO: dict[str, Any] = {
 
 
 def _user_id(user: dict[str, Any]) -> str:
+    import re
     provider = user.get("provider", "unknown")
     uid = user.get("id") or user.get("email", "anonymous")
-    return f"{provider}_{uid}"
+    # 防止路径穿越：只保留字母数字和下划线
+    safe_uid = re.sub(r"[^a-zA-Z0-9_@.+-]", "_", str(uid))
+    return f"{provider}_{safe_uid}"
 
 
 def _user_dir(user: dict[str, Any]) -> Path:

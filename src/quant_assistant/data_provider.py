@@ -354,7 +354,7 @@ def _quotes_from_frame(frame: Any, codes: dict[str, str]) -> dict[str, Quote]:
 
 
 def _first_existing_column(frame: Any, names: list[str]) -> str | None:
-    columns = set(str(column) for column in getattr(frame, "columns", []))
+    columns = getattr(frame, "columns", [])
     for name in names:
         if name in columns:
             return name

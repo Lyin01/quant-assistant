@@ -85,6 +85,8 @@ def _fetch_eastmoney_news(limit: int) -> list[dict[str, str]]:
         raw = response.read().decode("utf-8")
 
     # Response wrapped as: var ajaxResult={...}
+    if "{" not in raw:
+        return []
     json_start = raw.index("{")
     payload = json.loads(raw[json_start:])
 

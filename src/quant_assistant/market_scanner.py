@@ -289,8 +289,8 @@ def scan_etfs(top_n: int = 200, max_workers: int = 8) -> tuple[pd.DataFrame, lis
                 result = future.result(timeout=10)
                 if result:
                     results.append(result)
-            except Exception:
-                pass
+            except Exception as exc:
+                messages.append(f"Scan failed for {code}: {exc}")
 
     elapsed = time.perf_counter() - start
     messages.append(f"Scanned {len(results)} ETFs in {elapsed:.1f}s.")

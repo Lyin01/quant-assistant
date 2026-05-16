@@ -33,10 +33,13 @@ SUMMARY_COLUMNS = [
 def read_uploaded_table(file_name: str, content: bytes) -> pd.DataFrame:
     lower = file_name.lower()
     buffer = BytesIO(content)
-    if lower.endswith(".csv"):
-        return pd.read_csv(buffer)
-    if lower.endswith(".xlsx") or lower.endswith(".xls"):
-        return pd.read_excel(buffer)
+    try:
+        if lower.endswith(".csv"):
+            return pd.read_csv(buffer)
+        if lower.endswith(".xlsx") or lower.endswith(".xls"):
+            return pd.read_excel(buffer)
+    except Exception as exc:
+        raise ValueError(f"文件解析失败（{file_name}）：{exc}") from exc
     raise ValueError("只支持 CSV / Excel 表格。")
 
 

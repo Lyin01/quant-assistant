@@ -37,6 +37,7 @@ def add_advanced_indicators(frame: pd.DataFrame) -> pd.DataFrame:
     delta = data["close"].diff()
     gain = delta.where(delta > 0, 0).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+    loss = loss.replace(0, 1e-10)  # 防止14根阳线时除零，RSI→100
     rs = gain / loss
     data["rsi14"] = 100 - (100 / (1 + rs))
 
