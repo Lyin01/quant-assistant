@@ -69,11 +69,11 @@ def fetch_policy_news(limit: int = 50) -> tuple[pd.DataFrame, list[str]]:
 
 
 def _fetch_eastmoney_news(limit: int) -> list[dict[str, str]]:
-    params = {
-        "pageSize": str(limit),
-        "type": "1",  # 财经要闻
-    }
-    url = "https://www.eastmoney.com/api/news?" + urllib.parse.urlencode(params)
+    # EastMoney 快讯 API（财经要闻，column=102）
+    url = (
+        "https://newsapi.eastmoney.com/kuaixun/v1/"
+        f"getlist_102_ajaxResult_{limit}_1_.html"
+    )
     request = urllib.request.Request(
         url,
         headers={
@@ -82,18 +82,30 @@ def _fetch_eastmoney_news(limit: int) -> list[dict[str, str]]:
         },
     )
     with urllib.request.urlopen(request, timeout=10) as response:
-        payload = json.loads(response.read().decode("utf-8"))
+        raw = response.read().decode("utf-8")
 
-    # EastMoney news API format varies; fallback to common structure
-    rows = payload if isinstance(payload, list) else payload.get("result", {}).get("data", [])
+    # Response wrapped as: var ajaxResult={...}
+    json_start = raw.index("{")
+    payload = json.loads(raw[json_start:])
+
+    rows = payload.get("LivesList", [])
     results = []
     for row in rows:
         if isinstance(row, dict):
+            url_w = str(row.get("url_w", row.get("url_unique", "")))
+            # Derive source from the URL host
+            source = "EastMoney"
+            if "global.eastmoney.com" in url_w:
+                source = "环球财经"
+            elif "finance.eastmoney.com" in url_w:
+                source = "东方财富"
+            elif "forex.eastmoney.com" in url_w:
+                source = "外汇"
             results.append({
-                "title": str(row.get("title", row.get("art_title", ""))),
-                "time": str(row.get("showTime", row.get("art_time", ""))),
-                "source": str(row.get("source", row.get("art_source", "EastMoney"))),
-                "url": str(row.get("url", row.get("art_url", ""))),
+                "title": str(row.get("title", "")),
+                "time": str(row.get("showtime", row.get("ordertime", ""))),
+                "source": source,
+                "url": url_w,
             })
     return results
 
