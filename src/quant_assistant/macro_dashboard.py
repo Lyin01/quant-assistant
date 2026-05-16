@@ -6,7 +6,7 @@ from typing import Any
 
 import pandas as pd
 
-from .disk_cache import load_cached, save_cached
+from .disk_cache import load_generic_cache, save_generic_cache
 
 
 MACRO_CACHE_KEY = "macro_indicators"
@@ -37,7 +37,7 @@ def _fetch_akshare_indicator(fetcher: str, column: str | None = None) -> tuple[f
 
 
 def fetch_macro_indicators() -> tuple[dict[str, Any], list[str]]:
-    cached = load_cached(MACRO_CACHE_KEY)
+    cached = load_generic_cache(MACRO_CACHE_KEY)
     if cached is not None:
         return cached, ["Macro: cache hit"]
 
@@ -109,7 +109,7 @@ def fetch_macro_indicators() -> tuple[dict[str, Any], list[str]]:
         if cn is not None and us is not None:
             indicators["cn_us_spread"] = round(cn - us, 2)
 
-    save_cached(MACRO_CACHE_KEY, indicators)
+    save_generic_cache(MACRO_CACHE_KEY, indicators)
     return indicators, messages
 
 

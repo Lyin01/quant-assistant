@@ -44,6 +44,41 @@ def save_cached(secid: str, start: str, end: str, adjust: str, frame: pd.DataFra
     frame.to_parquet(path, index=False)
 
 
+# Generic cache for non-DataFrame objects (dicts, lists, etc.)
+_GENERIC_CACHE_DIR = Path("data/cache/generic")
+_GENERIC_CACHE_TTL_DAYS = 1
+
+
+def _generic_cache_path(key: str) -> Path:
+    _GENERIC_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    return _GENERIC_CACHE_DIR / f"{key}.json"
+
+
+def load_generic_cache(key: str) -> Any | None:
+    path = _generic_cache_path(key)
+    if not path.exists():
+        return None
+    mtime = datetime.fromtimestamp(os.path.getmtime(path))
+    if datetime.now() - mtime > timedelta(days=_GENERIC_CACHE_TTL_DAYS):
+        path.unlink(missing_ok=True)
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            import json
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def save_generic_cache(key: str, data: Any) -> None:
+    if data is None:
+        return
+    path = _generic_cache_path(key)
+    import json
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
 def clear_expired_cache() -> int:
     """Remove expired cache files. Returns count removed."""
     if not CACHE_DIR.exists():

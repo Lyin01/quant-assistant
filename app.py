@@ -788,8 +788,8 @@ elif page == "宏观/产业":
     st.subheader("全球宏观仪表盘")
     if st.button("刷新宏观数据", type="primary"):
         from quant_assistant.macro_dashboard import MACRO_CACHE_KEY
-        from quant_assistant.disk_cache import load_cached, save_cached
-        save_cached(MACRO_CACHE_KEY, None)
+        from quant_assistant.disk_cache import save_generic_cache
+        save_generic_cache(MACRO_CACHE_KEY, None)
     with st.spinner("正在获取宏观数据..."):
         macro_data, macro_messages = fetch_macro_indicators()
     if macro_data:
@@ -843,9 +843,8 @@ elif page == "宏观/产业":
     st.divider()
     st.subheader("政策雷达")
     if st.button("刷新政策新闻"):
-        from quant_assistant.policy_radar import POLICY_KEYWORDS
-        from quant_assistant.disk_cache import load_cached, save_cached
-        save_cached("policy_news_50", None)
+        from quant_assistant.disk_cache import save_generic_cache
+        save_generic_cache("policy_news_50", None)
     with st.spinner("正在抓取政策新闻..."):
         news_df, news_messages = fetch_policy_news(limit=50)
     if not news_df.empty:

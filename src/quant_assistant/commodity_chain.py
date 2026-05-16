@@ -7,7 +7,7 @@ from typing import Any
 
 import pandas as pd
 
-from .disk_cache import load_cached, save_cached
+from .disk_cache import load_generic_cache, save_generic_cache
 
 
 # Predefined commodity chains with representative futures/spot symbols
@@ -96,7 +96,7 @@ def _fetch_eastmoney_futures(symbol: str) -> tuple[float | None, str]:
 
 def fetch_chain_prices(chain_name: str) -> tuple[list[dict[str, Any]], list[str]]:
     cache_key = f"chain_{chain_name}"
-    cached = load_cached(cache_key)
+    cached = load_generic_cache(cache_key)
     if cached is not None:
         return cached, ["Chain: cache hit"]
 
@@ -126,7 +126,7 @@ def fetch_chain_prices(chain_name: str) -> tuple[list[dict[str, Any]], list[str]
             "来源": source,
         })
 
-    save_cached(cache_key, results)
+    save_generic_cache(cache_key, results)
     return results, messages
 
 

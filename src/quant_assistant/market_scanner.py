@@ -9,7 +9,7 @@ from typing import Any
 
 import pandas as pd
 
-from .disk_cache import load_cached, save_cached
+from .disk_cache import load_generic_cache, save_generic_cache
 from .market_data import normalize_history
 
 
@@ -206,7 +206,7 @@ def _score(factors: dict[str, float], current_price: float) -> float:
 
 def _scan_one(code: str, name: str, price: float) -> dict[str, Any] | None:
     cache_key = f"scanner_{code}"
-    cached = load_cached(cache_key)
+    cached = load_generic_cache(cache_key)
     if cached is not None:
         cached["from_cache"] = True
         return cached
@@ -229,7 +229,7 @@ def _scan_one(code: str, name: str, price: float) -> dict[str, Any] | None:
         "score": score,
         **factors,
     }
-    save_cached(cache_key, result)
+    save_generic_cache(cache_key, result)
     return result
 
 

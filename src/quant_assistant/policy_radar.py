@@ -7,7 +7,7 @@ from typing import Any
 
 import pandas as pd
 
-from .disk_cache import load_cached, save_cached
+from .disk_cache import load_generic_cache, save_generic_cache
 
 
 # Policy keywords to track
@@ -33,7 +33,7 @@ POLICY_KEYWORDS = [
 
 def fetch_policy_news(limit: int = 50) -> tuple[pd.DataFrame, list[str]]:
     cache_key = f"policy_news_{limit}"
-    cached = load_cached(cache_key)
+    cached = load_generic_cache(cache_key)
     if cached is not None:
         return cached, ["Policy: cache hit"]
 
@@ -63,7 +63,8 @@ def fetch_policy_news(limit: int = 50) -> tuple[pd.DataFrame, list[str]]:
     df["_sort"] = df["is_policy"].astype(int) * 2 + (df["tags"] != "").astype(int)
     df = df.sort_values("_sort", ascending=False).drop(columns=["_sort"]).reset_index(drop=True)
 
-    save_cached(cache_key, df)
+    # Convert DataFrame to dict for JSON serialization
+    save_generic_cache(cache_key, df.to_dict(orient="records"))
     return df, messages
 
 
