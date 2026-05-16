@@ -190,9 +190,15 @@ class AutoProvider:
         return quotes
 
     def get_quotes_with_status(self, secids: list[str]) -> tuple[dict[str, Quote], list[str]]:
-        """Fetch quotes in parallel from EastMoney and AkShare, use whichever returns first."""
+        """Fetch quotes in parallel from all providers, return as soon as we have enough."""
         if not secids:
             return {}, ["AutoProvider: no secids requested."]
+
+        # Eager-import akshare so the worker thread doesn't pay first-import cost.
+        try:
+            import akshare as ak  # noqa: F401
+        except Exception:
+            pass
 
         def _fetch(fn, name, targets):
             start = time.perf_counter()
@@ -208,35 +214,36 @@ class AutoProvider:
         quotes: dict[str, Quote] = {}
         messages: list[str] = []
 
-        # Phase 1: Race EastMoney vs AkShare
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            futures = {
-                executor.submit(_fetch, self.eastmoney.get_quotes_with_status, "eastmoney", secids): "eastmoney",
-                executor.submit(_fetch, self.akshare.get_quotes_with_status, "akshare", secids): "akshare",
-            }
+        # Phase 1: Race all three providers; use whoever returns first.
+        executor = ThreadPoolExecutor(max_workers=3)
+        futures = {
+            executor.submit(_fetch, self.eastmoney.get_quotes_with_status, "eastmoney", secids): "eastmoney",
+            executor.submit(_fetch, self.akshare.get_quotes_with_status, "akshare", secids): "akshare",
+            executor.submit(_fetch, self.tencent.get_quotes_with_status, "tencent", secids): "tencent",
+        }
 
-            done, not_done = wait(list(futures.keys()), timeout=3, return_when=FIRST_COMPLETED)
+        done, not_done = wait(list(futures.keys()), timeout=2, return_when=FIRST_COMPLETED)
 
-            for future in done:
+        for future in done:
+            q, m, name = future.result()
+            quotes.update(q)
+            messages.extend(m)
+
+        # Phase 2: If still missing, wait up to 2 more seconds for remaining providers.
+        missing = sorted(set(secids) - set(quotes))
+        if missing and not_done:
+            done2, _ = wait(list(not_done), timeout=2)
+            for future in done2:
                 q, m, name = future.result()
                 quotes.update(q)
                 messages.extend(m)
 
-            # Phase 2: If still missing, give the other provider up to 3 more seconds
-            missing = sorted(set(secids) - set(quotes))
-            if missing and not_done:
-                done2, _ = wait(list(not_done), timeout=3)
-                for future in done2:
-                    q, m, name = future.result()
-                    quotes.update(q)
-                    messages.extend(m)
+        # Critical: do NOT block on slow/blocked outbound requests.
+        executor.shutdown(wait=False)
 
-        # Phase 3: Tencent fallback for any remaining missing
         missing = sorted(set(secids) - set(quotes))
         if missing:
-            q, m, name = _fetch(self.tencent.get_quotes_with_status, "tencent", missing)
-            quotes.update(q)
-            messages.extend(m)
+            messages.append(f"AutoProvider: {len(missing)} quotes still missing after all attempts.")
 
         return quotes, messages
 
