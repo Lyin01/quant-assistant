@@ -15,7 +15,7 @@ import streamlit as st
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from quant_assistant.analytics import action_list, add_advanced_indicators, add_indicators, backtest_ma_trend, latest_signal
+from quant_assistant.analytics import add_advanced_indicators, add_indicators, backtest_ma_trend, latest_signal
 from quant_assistant.analytics_panel import (
     build_asset_distribution,
     compute_return_curve,
@@ -38,11 +38,14 @@ from quant_assistant.importer import (
     read_uploaded_table,
     template_frame,
 )
-from quant_assistant.commodity_chain import fetch_chain_prices, list_chains
+from quant_assistant.import_review import blocking_issue_count, detect_target_account, import_review_issues, merge_parsed_frames
+from quant_assistant.commodity_chain import chain_summary, fetch_chain_prices, list_chains
 from quant_assistant.macro_dashboard import fetch_macro_indicators, macro_summary
 from quant_assistant.market_data import fetch_etf_ranking, fetch_history, instrument_options
 from quant_assistant.market_scanner import scan_etfs
 from quant_assistant.policy_radar import fetch_policy_news, summarize_policy_trends
+from quant_assistant.recommendation_view import recommendation_table, split_recommendations, strategy_coverage_issues
+from quant_assistant.schema import blocking_issue_count as schema_blocking_issue_count, validate_app_data
 from quant_assistant.strategy import generate_recommendations
 
 
@@ -53,6 +56,17 @@ require_auth()
 user = st.session_state.get("oauth_user", {})
 portfolio = get_or_create_portfolio(user)
 config = load_config(user)
+
+data_issues = validate_app_data(config, portfolio)
+if data_issues:
+    blockers = schema_blocking_issue_count(data_issues)
+    if blockers:
+        st.error(f"配置/持仓数据存在 {blockers} 个阻断问题，应用已暂停。")
+        st.dataframe(pd.DataFrame(data_issues), use_container_width=True, hide_index=True)
+        st.stop()
+    with st.expander("配置/持仓校验提示", expanded=False):
+        st.dataframe(pd.DataFrame(data_issues), use_container_width=True, hide_index=True)
+
 fund = portfolio["accounts"]["fund"]
 stock = portfolio["accounts"]["stock"]
 options = instrument_options(config)
@@ -124,16 +138,6 @@ def _quote_frame(quotes: dict) -> pd.DataFrame:
     )
 
 
-def _merge_parsed_frames(frames: list[pd.DataFrame]) -> pd.DataFrame:
-    """Merge multiple parsed DataFrames, keeping the latest row for duplicate names."""
-    if not frames:
-        return pd.DataFrame()
-    combined = pd.concat(frames, ignore_index=True)
-    if combined.empty or "name" not in combined.columns:
-        return combined
-    return combined.drop_duplicates(subset=["name"], keep="last").reset_index(drop=True)
-
-
 def _kline_figure(frame: pd.DataFrame, name: str) -> go.Figure:
     figure = go.Figure()
     figure.add_trace(
@@ -184,6 +188,52 @@ def _fmt(value: object, suffix: str = "") -> str:
 def _title() -> None:
     st.title("量化助手")
     st.caption("本地半自动复盘助手。只生成建议，不自动真实下单。")
+
+
+def _render_import_issues(issues: list[dict[str, str]]) -> bool:
+    blockers = blocking_issue_count(issues)
+    if not issues:
+        st.success("导入校验未发现明显问题。")
+        return False
+
+    st.dataframe(pd.DataFrame(issues), use_container_width=True, hide_index=True)
+    if blockers:
+        st.error(f"发现 {blockers} 个阻断问题，修正后再确认写入。")
+        return True
+
+    st.info("这些是提示项，不会阻止写入；确认无误后可以继续。")
+    return False
+
+
+def _render_import_rollback(location_key: str) -> None:
+    from quant_assistant.history import read_history, rollback
+
+    history_file = user_history_file(user)
+    history = read_history(history_file, limit=5)
+    with st.expander("撤销最近一次导入", expanded=False):
+        if not history:
+            st.info("暂无可撤销的导入记录。")
+            return
+
+        latest = history[0]
+        account_key = latest.get("account")
+        ts = str(latest.get("timestamp", ""))[:16].replace("T", " ")
+        changes = latest.get("changes", {})
+        st.caption(
+            f"最近记录：{ts} | {latest.get('type', 'unknown')} | "
+            f"新增 {len(changes.get('added', []))} / 更新 {len(changes.get('updated', []))} / "
+            f"移除 {len(changes.get('removed', []))}"
+        )
+        if st.button("撤销最近一次导入", key=f"rollback_import_{location_key}"):
+            restored = rollback(history_file)
+            if restored and account_key in portfolio.get("accounts", {}):
+                portfolio["accounts"][account_key] = restored
+                portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+                save_portfolio(user, portfolio)
+                reload_portfolio()
+                st.success(f"已恢复 {account_key} 到最近一次导入前。")
+                st.rerun()
+            st.warning("最近记录没有可恢复快照。")
 
 
 page = st.sidebar.radio(
@@ -240,10 +290,12 @@ if page == "总览":
                 )
 
     recs = generate_recommendations(config, portfolio, quotes=quotes)
-    st.subheader("今日买卖清单（基于实时行情）" if quotes else "今日买卖清单（降级：使用持仓快照）")
-    actions = action_list(recs)
+    data_source = "实时行情" if quotes else "持仓快照"
+    actionable_recs, watchlist_recs = split_recommendations(recs)
+    st.subheader("今日操作清单（基于实时行情）" if quotes else "今日操作清单（降级：使用持仓快照）")
+    actions = recommendation_table(actionable_recs, data_source)
     if actions.empty:
-        st.info("当前没有触发明确买卖动作。")
+        st.info("当前没有触发买入、卖出或限价买入动作。")
     else:
         st.dataframe(actions, use_container_width=True, hide_index=True)
         st.download_button(
@@ -253,7 +305,22 @@ if page == "总览":
             mime="text/csv",
         )
 
-    with st.expander("完整建议"):
+    with st.expander(f"观察项（HOLD，共 {len(watchlist_recs)} 条）", expanded=False):
+        watchlist = recommendation_table(watchlist_recs, data_source)
+        if watchlist.empty:
+            st.info("暂无观察项。")
+        else:
+            st.dataframe(watchlist, use_container_width=True, hide_index=True)
+
+    coverage_issues = strategy_coverage_issues(config, portfolio)
+    with st.expander("策略覆盖检查", expanded=bool(coverage_issues)):
+        if coverage_issues:
+            st.warning("存在持仓尚未完全纳入策略或行情代理配置。")
+            st.dataframe(pd.DataFrame(coverage_issues), use_container_width=True, hide_index=True)
+        else:
+            st.success("当前持仓的策略标签和行情代理配置未发现明显缺口。")
+
+    with st.expander("完整建议原文"):
         for rec in recs:
             st.write(f'**{rec["action"]}** `{rec["instrument"]}` `{rec["amount"]}`')
             st.caption(rec["reason"])
@@ -407,6 +474,8 @@ elif page == "回测":
                 st.write(message)
 
 elif page == "导入持仓":
+    _render_import_rollback("page")
+
     st.subheader("从表格导入持仓")
     template = template_frame()
     st.download_button(
@@ -449,7 +518,11 @@ elif page == "导入持仓":
             format_func=lambda x: "支付宝基金 (fund)" if x == "fund" else "国信证券 (stock)",
             key="csv_account_select",
         )
-        if st.button("确认更新持仓", type="primary", key="csv_update_btn"):
+        csv_target = portfolio["accounts"][csv_account_choice]
+        csv_issues = import_review_issues(positions, csv_account_choice, csv_target.get("positions", []))
+        st.caption("写入前校验")
+        csv_blocked = _render_import_issues(csv_issues)
+        if st.button("确认更新持仓", type="primary", key="csv_update_btn", disabled=csv_blocked):
             from quant_assistant.history import compute_delta, record_change
 
             target = portfolio["accounts"][csv_account_choice]
@@ -514,7 +587,7 @@ elif page == "导入持仓":
                     st.warning(f"截图 {idx + 1} 未识别到文字。")
 
             if all_parsed:
-                merged_parsed = _merge_parsed_frames(all_parsed)
+                merged_parsed = merge_parsed_frames(all_parsed)
                 with text_col:
                     st.success(f"共识别 {len(merged_parsed)} 条持仓，可编辑后确认。")
                     edited = st.data_editor(
@@ -551,10 +624,12 @@ elif page == "导入持仓":
             st.session_state["ocr_import_parsed"] = parsed
             st.session_state["ocr_import_summary"] = summary
             st.session_state["ocr_import_positions"] = dataframe_to_positions(parsed)
+            st.session_state["ocr_import_preset"] = preset
 
     parsed = st.session_state.get("ocr_import_parsed")
     summary = st.session_state.get("ocr_import_summary")
     parsed_positions = st.session_state.get("ocr_import_positions", [])
+    import_preset = st.session_state.get("ocr_import_preset", "通用")
 
     if parsed is not None:
         if summary:
@@ -568,13 +643,17 @@ elif page == "导入持仓":
             st.success(f"已识别 {len(parsed)} 条持仓。")
             st.dataframe(parsed, use_container_width=True, hide_index=True)
 
-            # Tag assignment for new positions
-            detected_account = summary.get("account_type") if summary else None
-            if not detected_account:
-                has_shares = any(p.get("shares") for p in parsed_positions)
-                detected_account = "stock" if has_shares else "fund"
+            detected_account = detect_target_account(import_preset, summary or {}, parsed_positions)
+            account_labels = {"fund": "支付宝基金 (fund)", "stock": "国信证券 (stock)"}
+            selected_account = st.selectbox(
+                "目标账户",
+                ["fund", "stock"],
+                index=0 if detected_account == "fund" else 1,
+                format_func=lambda x: account_labels[x],
+                key="ocr_target_account",
+            )
 
-            target_account = portfolio["accounts"][detected_account]
+            target_account = portfolio["accounts"][selected_account]
             existing_names = {p["name"] for p in target_account["positions"]}
             imported_names = {p["name"] for p in parsed_positions}
             new_names = imported_names - existing_names
@@ -618,20 +697,25 @@ elif page == "导入持仓":
                 if unchanged:
                     st.write("保留:", ", ".join(unchanged))
 
+            st.caption("写入前校验")
+            ocr_issues = import_review_issues(parsed_positions, selected_account, target_account.get("positions", []))
+            ocr_blocked = _render_import_issues(ocr_issues)
+
             # History tracking integration
             from quant_assistant.history import compute_delta, record_change
 
-            if st.button("确认更新持仓", type="primary", key="ocr_update_btn"):
+            if st.button("确认更新持仓", type="primary", key="ocr_update_btn", disabled=ocr_blocked):
                 # Save snapshot before change
                 previous_snapshot = dict(target_account)
 
                 merged_positions = merge_positions(target_account["positions"], parsed_positions)
-                if summary:
+                summary_account = summary.get("account_type") if summary else None
+                if summary and (summary_account is None or summary_account == selected_account):
                     updated_account = merge_account_summary(target_account, summary)
                 else:
                     updated_account = dict(target_account)
                 updated_account["positions"] = merged_positions
-                portfolio["accounts"][detected_account] = updated_account
+                portfolio["accounts"][selected_account] = updated_account
                 portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
 
                 # Record change history
@@ -644,7 +728,7 @@ elif page == "导入持仓":
                 record_change(
                     history_file,
                     change_type="ocr_import",
-                    account=detected_account,
+                    account=selected_account,
                     delta=delta,
                     summary=account_summary,
                     previous_snapshot=previous_snapshot,
@@ -652,9 +736,9 @@ elif page == "导入持仓":
 
                 save_portfolio(user, portfolio)
                 reload_portfolio()
-                for key in ("ocr_import_parsed", "ocr_import_summary", "ocr_import_positions", "ocr_editor"):
+                for key in ("ocr_import_parsed", "ocr_import_summary", "ocr_import_positions", "ocr_import_preset", "ocr_editor"):
                     st.session_state.pop(key, None)
-                st.success(f"已更新 {detected_account} 持仓，共 {len(merged_positions)} 条。变更已记录到历史。")
+                st.success(f"已更新 {selected_account} 持仓，共 {len(merged_positions)} 条。变更已记录到历史。")
                 st.rerun()
 
     with st.expander("推荐粘贴格式", expanded=False):
