@@ -794,22 +794,22 @@ elif page == "宏观/产业":
         macro_data, macro_messages = fetch_macro_indicators()
     if macro_data:
         mc1, mc2, mc3, mc4 = st.columns(4)
-        if "cn_10y_bond" in macro_data:
+        if macro_data.get("cn_10y_bond") is not None:
             mc1.metric("中国10债", f"{macro_data['cn_10y_bond']:.2f}%")
-        if "us_10y_bond" in macro_data:
+        if macro_data.get("us_10y_bond") is not None:
             mc2.metric("美国10债", f"{macro_data['us_10y_bond']:.2f}%")
-        if "cn_us_spread" in macro_data:
+        if macro_data.get("cn_us_spread") is not None:
             mc3.metric("中美利差", f"{macro_data['cn_us_spread']:+.2f}%")
-        if "usdcny" in macro_data:
+        if macro_data.get("usdcny") is not None:
             mc4.metric("美元兑人民币", f"{macro_data['usdcny']:.4f}")
         mc5, mc6, mc7, mc8 = st.columns(4)
-        if "cn_pmi" in macro_data:
+        if macro_data.get("cn_pmi") is not None:
             mc5.metric("中国PMI", f"{macro_data['cn_pmi']:.1f}")
-        if "cn_cpi_yoy" in macro_data:
+        if macro_data.get("cn_cpi_yoy") is not None:
             mc6.metric("中国CPI", f"{macro_data['cn_cpi_yoy']:.2f}%")
-        if "us_cpi_yoy" in macro_data:
+        if macro_data.get("us_cpi_yoy") is not None:
             mc7.metric("美国CPI", f"{macro_data['us_cpi_yoy']:.2f}%")
-        if "fed_rate" in macro_data:
+        if macro_data.get("fed_rate") is not None:
             mc8.metric("美联储利率", f"{macro_data['fed_rate']:.2f}%")
 
         st.divider()

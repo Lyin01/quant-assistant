@@ -14,49 +14,80 @@ from .market_data import normalize_history
 
 
 def fetch_all_etfs() -> pd.DataFrame:
-    params = {
-        "pn": "1",
-        "pz": "10000",
-        "po": "1",
-        "np": "1",
-        "ut": "bd1d9ddb04089700cf9c27f6f7426281",
-        "fltt": "2",
-        "invt": "2",
-        "fid": "f6",
-        "fs": "b:MK0021,b:MK0022,b:MK0023,b:MK0024",
-        "fields": "f12,f14,f2,f3,f5,f6,f18,f20,f21",
-    }
-    url = "https://push2.eastmoney.com/api/qt/clist/get?" + urllib.parse.urlencode(params)
-    request = urllib.request.Request(
-        url,
-        headers={
-            "Referer": "https://quote.eastmoney.com/",
-            "User-Agent": "Mozilla/5.0 QuantAssistant/1.0",
-        },
-    )
-    with urllib.request.urlopen(request, timeout=15) as response:
-        payload = json.loads(response.read().decode("utf-8"))
+    # Try EastMoney first
+    try:
+        params = {
+            "pn": "1",
+            "pz": "10000",
+            "po": "1",
+            "np": "1",
+            "ut": "bd1d9ddb04089700cf9c27f6f7426281",
+            "fltt": "2",
+            "invt": "2",
+            "fid": "f6",
+            "fs": "b:MK0021,b:MK0022,b:MK0023,b:MK0024",
+            "fields": "f12,f14,f2,f3,f5,f6,f18,f20,f21",
+        }
+        url = "https://push2.eastmoney.com/api/qt/clist/get?" + urllib.parse.urlencode(params)
+        request = urllib.request.Request(
+            url,
+            headers={
+                "Referer": "https://quote.eastmoney.com/",
+                "User-Agent": "Mozilla/5.0 QuantAssistant/1.0",
+            },
+        )
+        with urllib.request.urlopen(request, timeout=15) as response:
+            payload = json.loads(response.read().decode("utf-8"))
 
-    rows = (payload.get("data") or {}).get("diff") or []
-    df = pd.DataFrame(
-        [
-            {
-                "code": row.get("f12"),
-                "name": row.get("f14"),
-                "price": row.get("f2"),
-                "pct": row.get("f3"),
-                "volume": row.get("f5"),
-                "amount": row.get("f6"),
-                "total_mv": row.get("f20"),
-                "float_mv": row.get("f21"),
-            }
-            for row in rows
-        ]
-    )
-    for col in ["price", "pct", "volume", "amount", "total_mv", "float_mv"]:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-    df = df.dropna(subset=["code", "name"])
-    return df
+        rows = (payload.get("data") or {}).get("diff") or []
+        df = pd.DataFrame(
+            [
+                {
+                    "code": row.get("f12"),
+                    "name": row.get("f14"),
+                    "price": row.get("f2"),
+                    "pct": row.get("f3"),
+                    "volume": row.get("f5"),
+                    "amount": row.get("f6"),
+                    "total_mv": row.get("f20"),
+                    "float_mv": row.get("f21"),
+                }
+                for row in rows
+            ]
+        )
+        for col in ["price", "pct", "volume", "amount", "total_mv", "float_mv"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        df = df.dropna(subset=["code", "name"])
+        if not df.empty:
+            return df
+    except Exception:
+        pass
+
+    # Fallback to AkShare
+    try:
+        import akshare as ak
+        frame = ak.fund_etf_spot_em()
+        if frame is None or frame.empty:
+            return pd.DataFrame()
+        rename = {
+            "代码": "code",
+            "名称": "name",
+            "最新价": "price",
+            "涨跌幅": "pct",
+            "成交量": "volume",
+            "成交额": "amount",
+            "总市值": "total_mv",
+            "流通市值": "float_mv",
+        }
+        existing = {k: v for k, v in rename.items() if k in frame.columns}
+        df = frame.rename(columns=existing)
+        for col in ["price", "pct", "volume", "amount", "total_mv", "float_mv"]:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+        df = df.dropna(subset=["code", "name"])
+        return df
+    except Exception:
+        return pd.DataFrame()
 
 
 def _etf_secid(code: str) -> str:
