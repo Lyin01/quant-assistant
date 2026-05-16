@@ -4,6 +4,7 @@ import json
 import time
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from typing import Any
@@ -189,39 +190,54 @@ class AutoProvider:
         return quotes
 
     def get_quotes_with_status(self, secids: list[str]) -> tuple[dict[str, Quote], list[str]]:
-        requested = len(secids)
+        """Fetch quotes in parallel from EastMoney and AkShare, use whichever returns first."""
+        if not secids:
+            return {}, ["AutoProvider: no secids requested."]
 
-        # EastMoney first (single HTTP request, fast and reliable)
-        start = time.perf_counter()
-        quotes, messages = self.eastmoney.get_quotes_with_status(secids)
-        latency_ms = (time.perf_counter() - start) * 1000
-        success = len(quotes)
-        record_request("eastmoney", requested=requested, success=success, failed=requested - success, latency_ms=latency_ms)
-
-        missing_secids = sorted(set(secids) - set(quotes))
-        if quotes and not missing_secids:
-            return quotes, messages
-
-        # AkShare fallback (slow, pulls full datasets)
-        akshare_targets = missing_secids if quotes else secids
-        start = time.perf_counter()
-        akshare_quotes, akshare_messages = self.akshare.get_quotes_with_status(akshare_targets)
-        latency_ms = (time.perf_counter() - start) * 1000
-        success = len(akshare_quotes)
-        record_request("akshare", requested=len(akshare_targets), success=success, failed=len(akshare_targets) - success, latency_ms=latency_ms)
-        quotes.update(akshare_quotes)
-        messages += akshare_messages
-
-        missing_secids = sorted(set(secids) - set(quotes))
-        if missing_secids:
-            # Tencent fallback
+        def _fetch(fn, name, targets):
             start = time.perf_counter()
-            tencent_quotes, tencent_messages = self.tencent.get_quotes_with_status(missing_secids)
+            try:
+                q, m = fn(targets)
+            except Exception as exc:
+                q, m = {}, [f"{name}: failed: {exc}"]
             latency_ms = (time.perf_counter() - start) * 1000
-            success = len(tencent_quotes)
-            record_request("tencent", requested=len(missing_secids), success=success, failed=len(missing_secids) - success, latency_ms=latency_ms)
-            quotes.update(tencent_quotes)
-            messages += tencent_messages
+            success = len(q)
+            record_request(name, requested=len(targets), success=success, failed=len(targets) - success, latency_ms=latency_ms)
+            return q, m, name
+
+        quotes: dict[str, Quote] = {}
+        messages: list[str] = []
+
+        # Phase 1: Race EastMoney vs AkShare
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = {
+                executor.submit(_fetch, self.eastmoney.get_quotes_with_status, "eastmoney", secids): "eastmoney",
+                executor.submit(_fetch, self.akshare.get_quotes_with_status, "akshare", secids): "akshare",
+            }
+
+            done, not_done = wait(list(futures.keys()), timeout=3, return_when=FIRST_COMPLETED)
+
+            for future in done:
+                q, m, name = future.result()
+                quotes.update(q)
+                messages.extend(m)
+
+            # Phase 2: If still missing, give the other provider up to 3 more seconds
+            missing = sorted(set(secids) - set(quotes))
+            if missing and not_done:
+                done2, _ = wait(list(not_done), timeout=3)
+                for future in done2:
+                    q, m, name = future.result()
+                    quotes.update(q)
+                    messages.extend(m)
+
+        # Phase 3: Tencent fallback for any remaining missing
+        missing = sorted(set(secids) - set(quotes))
+        if missing:
+            q, m, name = _fetch(self.tencent.get_quotes_with_status, "tencent", missing)
+            quotes.update(q)
+            messages.extend(m)
+
         return quotes, messages
 
 
