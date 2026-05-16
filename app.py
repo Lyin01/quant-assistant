@@ -23,6 +23,7 @@ from quant_assistant.analytics_panel import (
     compute_monthly_returns,
     load_portfolio_history,
 )
+from quant_assistant.auth import require_auth
 from quant_assistant.data_source_health import read_health, summarize_by_provider
 from quant_assistant.config import load_json, save_json
 from quant_assistant.data_provider import build_provider, collect_secids, quote_status
@@ -48,6 +49,8 @@ portfolio = load_json(ROOT / "portfolio.json")
 fund = portfolio["accounts"]["fund"]
 stock = portfolio["accounts"]["stock"]
 options = instrument_options(config)
+
+require_auth()
 
 
 @st.cache_data(ttl=600, show_spinner=False)

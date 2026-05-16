@@ -1,6 +1,7 @@
 __all__ = [
     "analytics",
     "analytics_panel",
+    "auth",
     "config",
     "data_provider",
     "data_source_health",
