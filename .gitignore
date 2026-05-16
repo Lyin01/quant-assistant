@@ -4,8 +4,20 @@ __pycache__/
 venv/
 env/
 .streamlit/secrets.toml
+.streamlit/*.log
 .pytest_cache/
 .claude/settings.local.json
 .worktrees/
 data/
 data_source_health.jsonl
+
+# Local non-deploy artifacts kept in this workspace.
+archive/
+agent-trials/
+codex-clawbot-bridge/
+cc-connect-codex-workspace/
+depcheck-grade-fixture*/
+portfolio-app/
+video-projects/
+*.mp4
+=1.3
