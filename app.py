@@ -38,7 +38,11 @@ from quant_assistant.importer import (
     read_uploaded_table,
     template_frame,
 )
+from quant_assistant.commodity_chain import fetch_chain_prices, list_chains
+from quant_assistant.macro_dashboard import fetch_macro_indicators, macro_summary
 from quant_assistant.market_data import fetch_etf_ranking, fetch_history, instrument_options
+from quant_assistant.market_scanner import scan_etfs
+from quant_assistant.policy_radar import fetch_policy_news, summarize_policy_trends
 from quant_assistant.strategy import generate_recommendations
 
 
@@ -184,7 +188,7 @@ def _title() -> None:
 
 page = st.sidebar.radio(
     "功能",
-    ["总览", "历史 K 线", "信号 / ETF 排行", "回测", "导入持仓", "分析"],
+    ["总览", "历史 K 线", "信号 / ETF 排行", "回测", "导入持仓", "分析", "市场扫描", "宏观/产业"],
     index=0,
 )
 
@@ -760,3 +764,103 @@ elif page == "分析":
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("数据不足，无法生成月度收益热力图。")
+
+elif page == "市场扫描":
+    st.subheader("全市场 ETF 多因子扫描")
+    st.caption("基于动量、趋势、RSI、MACD、成交量等因子综合评分，不预测未来，只反映当前技术面强弱。")
+    scan_col1, scan_col2 = st.columns([1, 3])
+    scan_limit = scan_col1.number_input("扫描数量", min_value=20, max_value=500, value=100, step=20)
+    if scan_col2.button("开始扫描", type="primary"):
+        with st.spinner(f"正在扫描前 {scan_limit} 只流动性最高的 ETF..."):
+            scan_result, scan_messages = scan_etfs(top_n=scan_limit)
+        if scan_result.empty:
+            st.warning("扫描未返回数据。")
+        else:
+            st.success(f"扫描完成，综合评分排名前 20：")
+            display_cols = ["排名", "代码", "名称", "价格", "综合评分", "5日涨幅%", "20日涨幅%", "60日涨幅%", "趋势分(0-3)", "RSI", "20日回撤%", "量比"]
+            available_cols = [c for c in display_cols if c in scan_result.columns]
+            st.dataframe(scan_result[available_cols].head(20), use_container_width=True, hide_index=True)
+        with st.expander("扫描状态"):
+            for msg in scan_messages:
+                st.write(msg)
+
+elif page == "宏观/产业":
+    st.subheader("全球宏观仪表盘")
+    if st.button("刷新宏观数据", type="primary"):
+        from quant_assistant.macro_dashboard import MACRO_CACHE_KEY
+        from quant_assistant.disk_cache import load_cached, save_cached
+        save_cached(MACRO_CACHE_KEY, None)
+    with st.spinner("正在获取宏观数据..."):
+        macro_data, macro_messages = fetch_macro_indicators()
+    if macro_data:
+        mc1, mc2, mc3, mc4 = st.columns(4)
+        if "cn_10y_bond" in macro_data:
+            mc1.metric("中国10债", f"{macro_data['cn_10y_bond']:.2f}%")
+        if "us_10y_bond" in macro_data:
+            mc2.metric("美国10债", f"{macro_data['us_10y_bond']:.2f}%")
+        if "cn_us_spread" in macro_data:
+            mc3.metric("中美利差", f"{macro_data['cn_us_spread']:+.2f}%")
+        if "usdcny" in macro_data:
+            mc4.metric("美元兑人民币", f"{macro_data['usdcny']:.4f}")
+        mc5, mc6, mc7, mc8 = st.columns(4)
+        if "cn_pmi" in macro_data:
+            mc5.metric("中国PMI", f"{macro_data['cn_pmi']:.1f}")
+        if "cn_cpi_yoy" in macro_data:
+            mc6.metric("中国CPI", f"{macro_data['cn_cpi_yoy']:.2f}%")
+        if "us_cpi_yoy" in macro_data:
+            mc7.metric("美国CPI", f"{macro_data['us_cpi_yoy']:.2f}%")
+        if "fed_rate" in macro_data:
+            mc8.metric("美联储利率", f"{macro_data['fed_rate']:.2f}%")
+
+        st.divider()
+        st.caption("宏观解读")
+        summaries = macro_summary(macro_data)
+        for s in summaries:
+            st.write(f"**{s['指标']}** | {s['状态']} | {s['解读']}")
+    else:
+        st.info("宏观数据暂不可用，可能因 AkShare 网络或本地环境问题。")
+    with st.expander("宏观数据状态"):
+        for msg in macro_messages:
+            st.write(msg)
+
+    st.divider()
+    st.subheader("产业链跟踪")
+    chain_name = st.selectbox("选择产业链", list_chains())
+    if chain_name:
+        chain_info = chain_summary(chain_name)
+        if chain_info:
+            st.caption(chain_info["description"])
+        with st.spinner("正在获取价格数据..."):
+            chain_prices, chain_messages = fetch_chain_prices(chain_name)
+        if chain_prices:
+            st.dataframe(pd.DataFrame(chain_prices), use_container_width=True, hide_index=True)
+        else:
+            st.info("价格数据暂不可用。")
+        with st.expander("价格数据源状态"):
+            for msg in chain_messages:
+                st.write(msg)
+
+    st.divider()
+    st.subheader("政策雷达")
+    if st.button("刷新政策新闻"):
+        from quant_assistant.policy_radar import POLICY_KEYWORDS
+        from quant_assistant.disk_cache import load_cached, save_cached
+        save_cached("policy_news_50", None)
+    with st.spinner("正在抓取政策新闻..."):
+        news_df, news_messages = fetch_policy_news(limit=50)
+    if not news_df.empty:
+        policy_df = news_df[news_df["is_policy"] == True]
+        st.caption(f"共 {len(news_df)} 条新闻，其中 {len(policy_df)} 条与关注主题相关")
+        if not policy_df.empty:
+            st.dataframe(policy_df[["title", "time", "tags", "source"]].head(20), use_container_width=True, hide_index=True)
+            trends = summarize_policy_trends(news_df, top_n=10)
+            if trends:
+                st.caption("热门政策主题")
+                st.dataframe(pd.DataFrame(trends), use_container_width=True, hide_index=True)
+        else:
+            st.info("近期暂无匹配的政策新闻。")
+    else:
+        st.info("新闻数据暂不可用。")
+    with st.expander("新闻抓取状态"):
+        for msg in news_messages:
+            st.write(msg)
