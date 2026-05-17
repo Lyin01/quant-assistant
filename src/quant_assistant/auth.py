@@ -114,7 +114,7 @@ def _oauth_config() -> dict[str, Any]:
         config = st.secrets.get("oauth", {})
     except StreamlitSecretNotFoundError:
         return {}
-    return config if isinstance(config, dict) else {}
+    return config if hasattr(config, "get") else {}
 
 
 def render_user_header() -> None:
