@@ -165,6 +165,8 @@ def _fetch_akshare_spot(name: str) -> tuple[float | None, str]:
     ]
 
     for fn_name in candidates:
+        if not hasattr(ak, fn_name):
+            continue
         try:
             fn = getattr(ak, fn_name)
             df = fn()
@@ -211,6 +213,28 @@ def _is_valid_chain_cache(cached: Any) -> bool:
     return True
 
 
+def _fetch_link(link: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
+    """Fetch a single chain link (intended for concurrent execution)."""
+    name = link["name"]
+    source = link["source"]
+    code = link["code"]
+    unit = link["unit"]
+
+    if source == "futures":
+        price, msg = _fetch_futures_price(code)
+    else:
+        price, msg = _fetch_akshare_spot(code)
+
+    if price is not None:
+        return {
+            "环节": name,
+            "价格": price,
+            "单位": unit,
+            "来源": source,
+        }, msg
+    return None, f"{name}: {msg}"
+
+
 def fetch_chain_prices(chain_name: str) -> tuple[list[dict[str, Any]], list[str]]:
     cache_key = f"chain_{chain_name}"
     cached = load_generic_cache(cache_key)
@@ -224,25 +248,22 @@ def fetch_chain_prices(chain_name: str) -> tuple[list[dict[str, Any]], list[str]
     results: list[dict[str, Any]] = []
     messages: list[str] = []
 
-    for link in chain["links"]:
-        name = link["name"]
-        source = link["source"]
-        code = link["code"]
-        unit = link["unit"]
+    import concurrent.futures
 
-        if source == "futures":
-            price, msg = _fetch_futures_price(code)
-        else:
-            price, msg = _fetch_akshare_spot(code)
-
-        messages.append(msg)
-        if price is not None:
-            results.append({
-                "环节": name,
-                "价格": price,
-                "单位": unit,
-                "来源": source,
-            })
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        futures = {
+            executor.submit(_fetch_link, link): link["name"]
+            for link in chain["links"]
+        }
+        for future in concurrent.futures.as_completed(futures):
+            name = futures[future]
+            try:
+                result, msg = future.result(timeout=15)
+                messages.append(msg)
+                if result is not None:
+                    results.append(result)
+            except Exception as exc:
+                messages.append(f"{name}: {exc}")
 
     if results:
         save_generic_cache(cache_key, results)
