@@ -901,10 +901,10 @@ elif page == "市场扫描":
         if scan_result.empty:
             st.warning("扫描未返回数据。")
         else:
-            st.success(f"扫描完成，综合评分排名前 20：")
+            st.success(f"扫描完成，综合评分排名前 {len(scan_result)}：")
             display_cols = ["排名", "代码", "名称", "价格", "综合评分", "5日涨幅%", "20日涨幅%", "60日涨幅%", "趋势分(0-3)", "RSI", "20日回撤%", "量比"]
             available_cols = [c for c in display_cols if c in scan_result.columns]
-            st.dataframe(scan_result[available_cols].head(20), use_container_width=True, hide_index=True)
+            st.dataframe(scan_result[available_cols], use_container_width=True, hide_index=True)
         with st.expander("扫描状态"):
             for msg in friendly_source_messages(scan_messages):
                 st.write(msg)
