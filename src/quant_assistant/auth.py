@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import urllib.request
 from typing import Any
@@ -99,6 +100,7 @@ def _render_login() -> None:
                 }
                 if _is_allowed(user_info):
                     st.session_state["oauth_user"] = user_info
+                    _persist_auth(user_info)
                     st.rerun()
                 else:
                     st.error(f"账号 {user_info['name']} ({email}) 未被授权访问此应用。")
@@ -135,11 +137,51 @@ def render_user_header() -> None:
     with cols[1]:
         if st.button("登出", key="logout_btn"):
             del st.session_state["oauth_user"]
+            _clear_persisted_auth()
             st.rerun()
 
 
+def _encode_auth(user_info: dict[str, Any]) -> str:
+    """Encode user info as a URL-safe base64 token for query-param persistence."""
+    payload = json.dumps(user_info, ensure_ascii=False)
+    return base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii")
+
+
+def _decode_auth(token: str) -> dict[str, Any] | None:
+    """Decode a query-param auth token back to user info, or None if invalid."""
+    try:
+        payload = base64.urlsafe_b64decode(token.encode("ascii")).decode("utf-8")
+        return json.loads(payload)
+    except Exception:
+        return None
+
+
+def _persist_auth(user_info: dict[str, Any]) -> None:
+    """Store auth token in URL query params so it survives WebSocket reconnects."""
+    st.query_params["auth"] = _encode_auth(user_info)
+
+
+def _clear_persisted_auth() -> None:
+    """Remove auth token from query params on explicit logout."""
+    if "auth" in st.query_params:
+        del st.query_params["auth"]
+
+
 def require_auth() -> None:
-    if "oauth_user" not in st.session_state:
-        _render_login()
-        st.stop()
-    render_user_header()
+    # 1. Check live session state
+    if "oauth_user" in st.session_state:
+        render_user_header()
+        return
+
+    # 2. Try to restore from query params (survives WebSocket reconnect)
+    auth_token = st.query_params.get("auth")
+    if auth_token:
+        user_info = _decode_auth(auth_token)
+        if user_info and _is_allowed(user_info):
+            st.session_state["oauth_user"] = user_info
+            render_user_header()
+            return
+
+    # 3. Not authenticated — show login
+    _render_login()
+    st.stop()

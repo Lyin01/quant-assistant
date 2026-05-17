@@ -888,9 +888,16 @@ elif page == "市场扫描":
     scan_col1, scan_col2 = st.columns([1, 3])
     scan_limit = scan_col1.number_input("扫描数量", min_value=10, max_value=500, value=DEFAULT_SCAN_LIMIT, step=10)
     scan_col2.caption("默认只扫前 30 只流动性最高 ETF，重复扫描优先命中本地缓存。")
-    if scan_col2.button("开始扫描", type="primary"):
+    btn_col1, btn_col2 = scan_col2.columns([1, 1])
+    if btn_col1.button("开始扫描", type="primary"):
         with st.spinner(f"正在扫描前 {scan_limit} 只流动性最高的 ETF..."):
             scan_result, scan_messages = scan_etfs(top_n=scan_limit)
+    elif btn_col2.button("强制刷新（跳过缓存）"):
+        with st.spinner(f"正在扫描前 {scan_limit} 只流动性最高的 ETF...（跳过缓存）"):
+            scan_result, scan_messages = scan_etfs(top_n=scan_limit, force_refresh=True)
+    else:
+        scan_result = None
+    if scan_result is not None:
         if scan_result.empty:
             st.warning("扫描未返回数据。")
         else:

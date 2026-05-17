@@ -5,12 +5,13 @@ import json
 import time
 import urllib.parse
 import urllib.request
+from datetime import date, timedelta
 from typing import Any
 
 import pandas as pd
 
 from .disk_cache import load_generic_cache, save_generic_cache
-from .market_data import normalize_history
+from .market_data import fetch_history, normalize_history
 
 DEFAULT_SCAN_LIMIT = 30
 SUMMARY_CACHE_PREFIX = "scanner_summary_v1"
@@ -238,16 +239,20 @@ def _score(factors: dict[str, float], current_price: float) -> float:
     return round(score, 1)
 
 
-def _scan_one(code: str, name: str, price: float) -> dict[str, Any] | None:
+def _scan_one(code: str, name: str, price: float, force_refresh: bool = False) -> dict[str, Any] | None:
     cache_key = f"scanner_{code}"
-    cached = load_generic_cache(cache_key)
-    if cached is not None:
-        cached["from_cache"] = True
-        return cached
+    if not force_refresh:
+        cached = load_generic_cache(cache_key)
+        if cached is not None:
+            cached["from_cache"] = True
+            return cached
 
     secid = _etf_secid(code)
     try:
-        klines = _fetch_eastmoney_klines(secid, days=70)
+        # Use fetch_history which has full fallback chain: AkShare → EastMoney → Tencent
+        end = date.today()
+        start = end - timedelta(days=80)  # 70 trading days ≈ 80 calendar days
+        klines, _msgs = fetch_history(secid, start, end)
     except Exception:
         return None
 
@@ -267,13 +272,14 @@ def _scan_one(code: str, name: str, price: float) -> dict[str, Any] | None:
     return result
 
 
-def scan_etfs(top_n: int = DEFAULT_SCAN_LIMIT, max_workers: int = 8) -> tuple[pd.DataFrame, list[str]]:
+def scan_etfs(top_n: int = DEFAULT_SCAN_LIMIT, max_workers: int = 4, force_refresh: bool = False) -> tuple[pd.DataFrame, list[str]]:
     messages: list[str] = []
     start = time.perf_counter()
     summary_cache_key = f"{SUMMARY_CACHE_PREFIX}_{top_n}"
-    cached_summary = load_generic_cache(summary_cache_key)
-    if isinstance(cached_summary, list) and cached_summary:
-        return pd.DataFrame(cached_summary), [f"Scanner summary cache hit: {len(cached_summary)} rows."]
+    if not force_refresh:
+        cached_summary = load_generic_cache(summary_cache_key)
+        if isinstance(cached_summary, list) and cached_summary:
+            return pd.DataFrame(cached_summary), [f"Scanner summary cache hit: {len(cached_summary)} rows."]
 
     try:
         etfs = fetch_all_etfs()
@@ -287,7 +293,7 @@ def scan_etfs(top_n: int = DEFAULT_SCAN_LIMIT, max_workers: int = 8) -> tuple[pd
     results: list[dict[str, Any]] = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            executor.submit(_scan_one, row["code"], row["name"], row["price"]): row["code"]
+            executor.submit(_scan_one, row["code"], row["name"], row["price"], force_refresh): row["code"]
             for _, row in etfs.iterrows()
         }
         for future in concurrent.futures.as_completed(futures):
@@ -300,7 +306,10 @@ def scan_etfs(top_n: int = DEFAULT_SCAN_LIMIT, max_workers: int = 8) -> tuple[pd
                 messages.append(f"Scan failed for {code}: {exc}")
 
     elapsed = time.perf_counter() - start
-    messages.append(f"Scanned {len(results)} ETFs in {elapsed:.1f}s.")
+    failed_count = top_n - len(results)
+    messages.append(f"Scanned {len(results)}/{top_n} ETFs in {elapsed:.1f}s.")
+    if failed_count > 0:
+        messages.append(f"{failed_count} ETF(s) failed — network or API issues with EastMoney. Try '强制刷新' or reduce concurrency.")
 
     if not results:
         return pd.DataFrame(), messages
@@ -327,5 +336,9 @@ def scan_etfs(top_n: int = DEFAULT_SCAN_LIMIT, max_workers: int = 8) -> tuple[pd
         "vol_ratio": "量比",
     }
     df = df.rename(columns={k: v for k, v in display_cols.items() if k in df.columns})
-    save_generic_cache(summary_cache_key, json.loads(df.to_json(orient="records", force_ascii=False)))
+    # Only cache when at least half of the requested ETFs succeeded — avoids cache pollution from partial failures
+    if len(results) >= top_n / 2:
+        save_generic_cache(summary_cache_key, json.loads(df.to_json(orient="records", force_ascii=False)))
+    else:
+        messages.append(f"Only {len(results)}/{top_n} succeeded, summary not cached — re-scan will retry failed ETFs.")
     return df, messages
