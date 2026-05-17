@@ -199,10 +199,22 @@ def _fetch_akshare_spot(name: str) -> tuple[float | None, str]:
     return None, f"spot price for {name}: not found in any source"
 
 
+def _is_valid_chain_cache(cached: Any) -> bool:
+    """Reject old caches that stored None prices as explicit dict entries."""
+    if not isinstance(cached, list) or not cached:
+        return False
+    for row in cached:
+        if not isinstance(row, dict):
+            return False
+        if row.get("价格") is None:
+            return False
+    return True
+
+
 def fetch_chain_prices(chain_name: str) -> tuple[list[dict[str, Any]], list[str]]:
     cache_key = f"chain_{chain_name}"
     cached = load_generic_cache(cache_key)
-    if cached is not None:
+    if _is_valid_chain_cache(cached):
         return cached, ["Chain: cache hit"]
 
     chain = CHAINS.get(chain_name)

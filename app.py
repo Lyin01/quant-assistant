@@ -955,6 +955,10 @@ elif page == "宏观/产业":
         chain_info = chain_summary(chain_name)
         if chain_info:
             st.caption(chain_info["description"])
+        if st.button("刷新产业链数据", type="primary"):
+            from quant_assistant.disk_cache import save_generic_cache
+            save_generic_cache(f"chain_{chain_name}", None)
+            st.rerun()
         with st.spinner("正在获取价格数据..."):
             chain_prices, chain_messages = fetch_chain_prices(chain_name)
         if chain_prices:
