@@ -5,13 +5,12 @@ import json
 import time
 import urllib.parse
 import urllib.request
-from datetime import date, timedelta
 from typing import Any
 
 import pandas as pd
 
 from .disk_cache import load_generic_cache, save_generic_cache
-from .market_data import fetch_history, normalize_history
+from .market_data import normalize_history
 
 DEFAULT_SCAN_LIMIT = 30
 SUMMARY_CACHE_PREFIX = "scanner_summary_v1"
@@ -95,12 +94,14 @@ def fetch_all_etfs() -> pd.DataFrame:
 
 
 def _etf_secid(code: str) -> str:
-    if code.startswith("5") or code.startswith("1"):
+    # Shanghai ETF codes start with 5 (50/51/52/56/58...); Shenzhen ETFs start with 15/16/18
+    if code.startswith("5"):
         return f"1.{code}"
     return f"0.{code}"
 
 
-def _fetch_eastmoney_klines(secid: str, days: int = 60) -> pd.DataFrame:
+def _fetch_eastmoney_klines(secid: str, days: int = 80, adjust: str = "qfq") -> pd.DataFrame:
+    fqt = {"": "0", "qfq": "1", "hfq": "2"}.get(adjust, "1")
     end = pd.Timestamp.now()
     start = end - pd.Timedelta(days=days + 20)
     params = {
@@ -108,7 +109,7 @@ def _fetch_eastmoney_klines(secid: str, days: int = 60) -> pd.DataFrame:
         "fields1": "f1,f2,f3,f4,f5,f6",
         "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61",
         "klt": "101",
-        "fqt": "0",
+        "fqt": fqt,
         "beg": start.strftime("%Y%m%d"),
         "end": end.strftime("%Y%m%d"),
         "lmt": "100000",
@@ -249,10 +250,8 @@ def _scan_one(code: str, name: str, price: float, force_refresh: bool = False) -
 
     secid = _etf_secid(code)
     try:
-        # Use fetch_history which has full fallback chain: AkShare → EastMoney → Tencent
-        end = date.today()
-        start = end - timedelta(days=80)  # 70 trading days ≈ 80 calendar days
-        klines, _msgs = fetch_history(secid, start, end)
+        # Use EastMoney directly to avoid AkShare hanging in concurrent scans
+        klines = _fetch_eastmoney_klines(secid, days=80)
     except Exception:
         return None
 
