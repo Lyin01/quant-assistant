@@ -6,6 +6,7 @@ __all__ = [
     "config",
     "data_provider",
     "data_source_health",
+    "daily_brief",
     "disk_cache",
     "history",
     "importer",

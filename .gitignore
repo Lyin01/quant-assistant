@@ -6,10 +6,12 @@ env/
 .streamlit/secrets.toml
 .streamlit/*.log
 .pytest_cache/
+.codex-run/
 .claude/settings.local.json
 .worktrees/
 data/
 data_source_health.jsonl
+$null
 
 # Local non-deploy artifacts kept in this workspace.
 archive/
@@ -21,3 +23,6 @@ portfolio-app/
 video-projects/
 *.mp4
 =1.3
+
+# Duplicate local scratch copy; deploy from repository root app.py.
+Quant assistant/

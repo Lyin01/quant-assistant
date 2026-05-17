@@ -47,8 +47,18 @@ def _ensure_user_dir(user: dict[str, Any]) -> Path:
     return directory
 
 
+def find_default_file(name: str) -> Path:
+    candidate = Path(name)
+    if candidate.exists():
+        return candidate
+    fallback = Path("Quant assistant") / name
+    if fallback.exists():
+        return fallback
+    return candidate
+
+
 def _default_config_path() -> Path:
-    return Path("config.json")
+    return find_default_file("config.json")
 
 
 def get_or_create_portfolio(user: dict[str, Any]) -> dict[str, Any]:

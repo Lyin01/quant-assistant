@@ -5,6 +5,7 @@ import urllib.request
 from typing import Any
 
 import streamlit as st
+from streamlit.errors import StreamlitSecretNotFoundError
 
 
 def _get_github_user(access_token: str) -> dict[str, Any] | None:
@@ -47,7 +48,7 @@ def _get_github_email(access_token: str) -> str | None:
 
 
 def _is_allowed(user_info: dict[str, Any]) -> bool:
-    allowed = st.secrets.get("oauth", {}).get("allowed", [])
+    allowed = _oauth_config().get("allowed", [])
     if not allowed:
         return True
     checks = [
@@ -63,7 +64,7 @@ def _render_login() -> None:
 
     has_any = False
 
-    github_cfg = st.secrets.get("oauth", {}).get("github", {})
+    github_cfg = _oauth_config().get("github", {})
     if github_cfg.get("client_id"):
         has_any = True
         try:
@@ -106,6 +107,14 @@ def _render_login() -> None:
 
     if not has_any:
         st.warning("OAuth 登录未配置。请在 Streamlit Secrets 中设置 client_id。")
+
+
+def _oauth_config() -> dict[str, Any]:
+    try:
+        config = st.secrets.get("oauth", {})
+    except StreamlitSecretNotFoundError:
+        return {}
+    return config if isinstance(config, dict) else {}
 
 
 def render_user_header() -> None:

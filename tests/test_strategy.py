@@ -1,6 +1,13 @@
 from quant_assistant.config import load_json
 from quant_assistant.strategy import generate_recommendations
-from quant_assistant.analytics import action_list, add_advanced_indicators, add_indicators, backtest_ma_trend, latest_signal
+from quant_assistant.analytics import (
+    action_list,
+    add_advanced_indicators,
+    add_indicators,
+    backtest_ma_trend,
+    interpret_backtest,
+    latest_signal,
+)
 from quant_assistant.importer import parse_ocr_positions, parse_ocr_summary
 import pandas as pd
 
@@ -98,6 +105,21 @@ def test_analytics_pipeline():
     assert not curve.empty
     assert "策略收益" in metrics
     assert len(actions) == 1
+
+
+def test_interpret_backtest_warns_when_strategy_loses_to_buy_hold():
+    interpretation = interpret_backtest(
+        {
+            "策略收益": -5.34,
+            "持有收益": 36.86,
+            "最大回撤": -11.31,
+            "交易次数": 53.0,
+            "天数": 600.0,
+        }
+    )
+
+    assert interpretation["结论"] == "跑输持有"
+    assert "不建议用于实盘参考" in interpretation["建议"]
 
 
 def test_parse_ocr_positions():

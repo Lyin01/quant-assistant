@@ -122,6 +122,34 @@ def backtest_ma_trend(frame: pd.DataFrame, fast: int = 20, slow: int = 60) -> tu
     return result, metrics
 
 
+def interpret_backtest(metrics: dict[str, float]) -> dict[str, str]:
+    if not metrics or "error" in metrics:
+        return {"结论": "无法解释", "建议": "历史数据不足，先补齐样本再评估策略。"}
+
+    strategy_return = float(metrics.get("策略收益", 0.0))
+    hold_return = float(metrics.get("持有收益", 0.0))
+    max_drawdown = float(metrics.get("最大回撤", 0.0))
+    trade_count = float(metrics.get("交易次数", 0.0))
+    days = max(float(metrics.get("天数", 1.0)), 1.0)
+    excess_return = strategy_return - hold_return
+
+    if excess_return <= -3:
+        conclusion = "跑输持有"
+        suggestion = "当前参数下策略明显跑输持有，不建议用于实盘参考。"
+    elif excess_return >= 3:
+        conclusion = "阶段性优于持有"
+        suggestion = "当前参数下策略阶段性优于持有，但仍需检查样本外表现和交易成本。"
+    else:
+        conclusion = "接近持有"
+        suggestion = "当前参数下策略与持有收益接近，暂不构成明确优势。"
+
+    if max_drawdown <= -15:
+        suggestion += " 最大回撤偏大，需要降低仓位或增加风控条件。"
+    if trade_count / days > 0.2:
+        suggestion += " 交易频率偏高，需考虑滑点和手续费。"
+    return {"结论": conclusion, "建议": suggestion}
+
+
 def action_list(recommendations: list[dict[str, str]]) -> pd.DataFrame:
     rows = [
         {

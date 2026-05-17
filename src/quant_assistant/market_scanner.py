@@ -12,6 +12,9 @@ import pandas as pd
 from .disk_cache import load_generic_cache, save_generic_cache
 from .market_data import normalize_history
 
+DEFAULT_SCAN_LIMIT = 30
+SUMMARY_CACHE_PREFIX = "scanner_summary_v1"
+
 
 def fetch_all_etfs() -> pd.DataFrame:
     # Try EastMoney first
@@ -264,9 +267,13 @@ def _scan_one(code: str, name: str, price: float) -> dict[str, Any] | None:
     return result
 
 
-def scan_etfs(top_n: int = 200, max_workers: int = 8) -> tuple[pd.DataFrame, list[str]]:
+def scan_etfs(top_n: int = DEFAULT_SCAN_LIMIT, max_workers: int = 8) -> tuple[pd.DataFrame, list[str]]:
     messages: list[str] = []
     start = time.perf_counter()
+    summary_cache_key = f"{SUMMARY_CACHE_PREFIX}_{top_n}"
+    cached_summary = load_generic_cache(summary_cache_key)
+    if isinstance(cached_summary, list) and cached_summary:
+        return pd.DataFrame(cached_summary), [f"Scanner summary cache hit: {len(cached_summary)} rows."]
 
     try:
         etfs = fetch_all_etfs()
@@ -320,4 +327,5 @@ def scan_etfs(top_n: int = 200, max_workers: int = 8) -> tuple[pd.DataFrame, lis
         "vol_ratio": "量比",
     }
     df = df.rename(columns={k: v for k, v in display_cols.items() if k in df.columns})
+    save_generic_cache(summary_cache_key, json.loads(df.to_json(orient="records", force_ascii=False)))
     return df, messages

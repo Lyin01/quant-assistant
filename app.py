@@ -13,9 +13,16 @@ import streamlit as st
 
 
 ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT / "src"))
+PROJECT_ROOT = ROOT if (ROOT / "src").exists() else ROOT.parent
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from quant_assistant.analytics import add_advanced_indicators, add_indicators, backtest_ma_trend, latest_signal
+from quant_assistant.analytics import (
+    add_advanced_indicators,
+    add_indicators,
+    backtest_ma_trend,
+    interpret_backtest,
+    latest_signal,
+)
 from quant_assistant.analytics_panel import (
     build_asset_distribution,
     compute_return_curve,
@@ -25,6 +32,7 @@ from quant_assistant.analytics_panel import (
 )
 from quant_assistant.auth import require_auth
 from quant_assistant.data_source_health import read_health, summarize_by_provider
+from quant_assistant.daily_brief import assess_quote_freshness, build_daily_cockpit, friendly_source_messages
 from quant_assistant.data_provider import build_provider, collect_secids, quote_status
 from quant_assistant.user_data import get_or_create_portfolio, load_config, save_portfolio, user_history_file
 from quant_assistant.importer import (
@@ -42,7 +50,7 @@ from quant_assistant.import_review import blocking_issue_count, detect_target_ac
 from quant_assistant.commodity_chain import chain_summary, fetch_chain_prices, list_chains
 from quant_assistant.macro_dashboard import fetch_macro_indicators, macro_summary
 from quant_assistant.market_data import fetch_etf_ranking, fetch_history, instrument_options
-from quant_assistant.market_scanner import scan_etfs
+from quant_assistant.market_scanner import DEFAULT_SCAN_LIMIT, scan_etfs
 from quant_assistant.policy_radar import fetch_policy_news, summarize_policy_trends
 from quant_assistant.recommendation_view import recommendation_table, split_recommendations, strategy_coverage_issues
 from quant_assistant.schema import blocking_issue_count as schema_blocking_issue_count, validate_app_data
@@ -264,6 +272,12 @@ if page == "总览":
     with st.spinner("正在获取行情..."):
         quotes, quote_messages = cached_quotes(_current_user_id(), json.dumps(config), json.dumps(portfolio))
 
+    quote_freshness = assess_quote_freshness([q.time_text for q in quotes.values() if q.time_text])
+    if quote_freshness["reliable"]:
+        st.info(f'{quote_freshness["status"]}：{quote_freshness["detail"]}')
+    else:
+        st.warning(f'{quote_freshness["status"]}：{quote_freshness["detail"]}')
+
     if quotes:
         latest_time = max((q.time_text for q in quotes.values() if q.time_text), default="")
         st.caption(f"行情更新时间: {latest_time or '未知'}")
@@ -272,7 +286,7 @@ if page == "总览":
         st.warning("未获取到实时行情，策略将降级使用 portfolio.json 里的 last_daily_pct 快照值。")
 
     with st.expander("行情源状态", expanded=not bool(quotes)):
-        for message in quote_messages:
+        for message in friendly_source_messages(quote_messages):
             st.write(message)
 
         # Data source health summary
@@ -292,6 +306,19 @@ if page == "总览":
     recs = generate_recommendations(config, portfolio, quotes=quotes)
     data_source = "实时行情" if quotes else "持仓快照"
     actionable_recs, watchlist_recs = split_recommendations(recs)
+    coverage_issues = strategy_coverage_issues(config, portfolio)
+
+    st.subheader("今日驾驶舱")
+    st.caption("只做复盘、条件检查和人工复核提示，不预测未来涨跌，不自动下单。")
+    cockpit_rows = build_daily_cockpit(
+        data_reliable=bool(quote_freshness["reliable"]),
+        data_detail=str(quote_freshness["detail"]),
+        actionable_count=len(actionable_recs),
+        watchlist_count=len(watchlist_recs),
+        coverage_issue_count=len(coverage_issues),
+    )
+    st.dataframe(pd.DataFrame(cockpit_rows), use_container_width=True, hide_index=True)
+
     st.subheader("今日操作清单（基于实时行情）" if quotes else "今日操作清单（降级：使用持仓快照）")
     actions = recommendation_table(actionable_recs, data_source)
     if actions.empty:
@@ -312,7 +339,6 @@ if page == "总览":
         else:
             st.dataframe(watchlist, use_container_width=True, hide_index=True)
 
-    coverage_issues = strategy_coverage_issues(config, portfolio)
     with st.expander("策略覆盖检查", expanded=bool(coverage_issues)):
         if coverage_issues:
             st.warning("存在持仓尚未完全纳入策略或行情代理配置。")
@@ -408,7 +434,7 @@ elif page == "历史 K 线":
             display_frame = enriched.rename(columns={k: v for k, v in display_cols.items() if k in enriched.columns})
             st.dataframe(display_frame.tail(120), use_container_width=True, hide_index=True)
         with st.expander("历史数据源状态", expanded=history.empty):
-            for message in messages:
+            for message in friendly_source_messages(messages):
                 st.write(message)
 
 elif page == "信号 / ETF 排行":
@@ -430,7 +456,7 @@ elif page == "信号 / ETF 排行":
         sig_col4.metric("20日回撤", _fmt(signal.get("drawdown_20_pct"), suffix="%"))
         st.caption(signal.get("reason", ""))
         with st.expander("信号数据源状态", expanded=signal_history.empty):
-            for message in signal_messages:
+            for message in friendly_source_messages(signal_messages):
                 st.write(message)
 
     st.subheader("ETF 涨跌排行")
@@ -443,7 +469,7 @@ elif page == "信号 / ETF 排行":
         else:
             st.dataframe(ranking, use_container_width=True, hide_index=True)
         with st.expander("排行数据源状态", expanded=ranking.empty):
-            for message in ranking_messages:
+            for message in friendly_source_messages(ranking_messages):
                 st.write(message)
 
 elif page == "回测":
@@ -467,10 +493,17 @@ elif page == "回测":
             m2.metric("持有收益", _fmt(metrics.get("持有收益"), "%"))
             m3.metric("最大回撤", _fmt(metrics.get("最大回撤"), "%"))
             m4.metric("交易次数", f'{metrics.get("交易次数", 0):.0f}')
+            interpretation = interpret_backtest(metrics)
+            note = f'{interpretation["结论"]}：{interpretation["建议"]}'
+            if interpretation["结论"] == "跑输持有":
+                st.warning(note)
+            else:
+                st.info(note)
+            st.caption("回测只解释历史样本内表现，不代表未来收益。")
             st.line_chart(bt_curve.set_index("日期")[["策略净值", "持有净值"]])
             st.dataframe(bt_curve.tail(120), use_container_width=True, hide_index=True)
         with st.expander("回测数据源状态", expanded=bt_curve.empty):
-            for message in bt_messages:
+            for message in friendly_source_messages(bt_messages):
                 st.write(message)
 
 elif page == "导入持仓":
@@ -853,7 +886,8 @@ elif page == "市场扫描":
     st.subheader("全市场 ETF 多因子扫描")
     st.caption("基于动量、趋势、RSI、MACD、成交量等因子综合评分，不预测未来，只反映当前技术面强弱。")
     scan_col1, scan_col2 = st.columns([1, 3])
-    scan_limit = scan_col1.number_input("扫描数量", min_value=20, max_value=500, value=100, step=20)
+    scan_limit = scan_col1.number_input("扫描数量", min_value=10, max_value=500, value=DEFAULT_SCAN_LIMIT, step=10)
+    scan_col2.caption("默认只扫前 30 只流动性最高 ETF，重复扫描优先命中本地缓存。")
     if scan_col2.button("开始扫描", type="primary"):
         with st.spinner(f"正在扫描前 {scan_limit} 只流动性最高的 ETF..."):
             scan_result, scan_messages = scan_etfs(top_n=scan_limit)
@@ -865,7 +899,7 @@ elif page == "市场扫描":
             available_cols = [c for c in display_cols if c in scan_result.columns]
             st.dataframe(scan_result[available_cols].head(20), use_container_width=True, hide_index=True)
         with st.expander("扫描状态"):
-            for msg in scan_messages:
+            for msg in friendly_source_messages(scan_messages):
                 st.write(msg)
 
 elif page == "宏观/产业":
@@ -904,7 +938,7 @@ elif page == "宏观/产业":
     else:
         st.info("宏观数据暂不可用，可能因 AkShare 网络或本地环境问题。")
     with st.expander("宏观数据状态"):
-        for msg in macro_messages:
+        for msg in friendly_source_messages(macro_messages):
             st.write(msg)
 
     st.divider()
@@ -921,7 +955,7 @@ elif page == "宏观/产业":
         else:
             st.info("价格数据暂不可用。")
         with st.expander("价格数据源状态"):
-            for msg in chain_messages:
+            for msg in friendly_source_messages(chain_messages):
                 st.write(msg)
 
     st.divider()
@@ -945,5 +979,5 @@ elif page == "宏观/产业":
     else:
         st.info("新闻数据暂不可用。")
     with st.expander("新闻抓取状态"):
-        for msg in news_messages:
+        for msg in friendly_source_messages(news_messages):
             st.write(msg)
