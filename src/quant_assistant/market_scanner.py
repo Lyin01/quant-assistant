@@ -5,12 +5,13 @@ import json
 import time
 import urllib.parse
 import urllib.request
+from datetime import date, timedelta
 from typing import Any
 
 import pandas as pd
 
 from .disk_cache import load_generic_cache, save_generic_cache
-from .market_data import normalize_history
+from .market_data import fetch_history, normalize_history
 
 DEFAULT_SCAN_LIMIT = 30
 SUMMARY_CACHE_PREFIX = "scanner_summary_v1"
@@ -60,6 +61,8 @@ def fetch_all_etfs() -> pd.DataFrame:
         )
         for col in ["price", "pct", "volume", "amount", "total_mv", "float_mv"]:
             df[col] = pd.to_numeric(df[col], errors="coerce")
+        df["code"] = df["code"].astype(str).str.strip()
+        df = df[df["code"] != ""]
         df = df.dropna(subset=["code", "name"])
         if not df.empty:
             return df
@@ -250,8 +253,10 @@ def _scan_one(code: str, name: str, price: float, force_refresh: bool = False) -
 
     secid = _etf_secid(code)
     try:
-        # Use EastMoney directly to avoid AkShare hanging in concurrent scans
-        klines = _fetch_eastmoney_klines(secid, days=80)
+        # Use fetch_history which tries cache first, then AkShare → EastMoney → Tencent
+        end = date.today()
+        start = end - timedelta(days=80)
+        klines, _msgs = fetch_history(secid, start, end)
     except Exception:
         return None
 
@@ -271,7 +276,7 @@ def _scan_one(code: str, name: str, price: float, force_refresh: bool = False) -
     return result
 
 
-def scan_etfs(top_n: int = DEFAULT_SCAN_LIMIT, max_workers: int = 4, force_refresh: bool = False) -> tuple[pd.DataFrame, list[str]]:
+def scan_etfs(top_n: int = DEFAULT_SCAN_LIMIT, max_workers: int = 6, force_refresh: bool = False) -> tuple[pd.DataFrame, list[str]]:
     messages: list[str] = []
     start = time.perf_counter()
     summary_cache_key = f"{SUMMARY_CACHE_PREFIX}_{top_n}"
@@ -308,7 +313,7 @@ def scan_etfs(top_n: int = DEFAULT_SCAN_LIMIT, max_workers: int = 4, force_refre
     failed_count = top_n - len(results)
     messages.append(f"Scanned {len(results)}/{top_n} ETFs in {elapsed:.1f}s.")
     if failed_count > 0:
-        messages.append(f"{failed_count} ETF(s) failed — network or API issues with EastMoney. Try '强制刷新' or reduce concurrency.")
+        messages.append(f"{failed_count} ETF(s) failed — data source timeout or network issue. Try '强制刷新' or check 行情源状态.")
 
     if not results:
         return pd.DataFrame(), messages
