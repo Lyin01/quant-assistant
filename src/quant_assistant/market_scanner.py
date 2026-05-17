@@ -243,6 +243,46 @@ def _score(factors: dict[str, float], current_price: float) -> float:
     return round(score, 1)
 
 
+def _tencent_symbol(code: str) -> str:
+    # Shanghai: 5xxxxx / 6xxxxx; Shenzhen: 0xxxxx / 3xxxxx / 15xxxxx / 16xxxxx
+    if code.startswith("5") or code.startswith("6"):
+        return f"sh{code}"
+    return f"sz{code}"
+
+
+def _fetch_tencent_klines(code: str, days: int = 120) -> pd.DataFrame:
+    symbol = _tencent_symbol(code)
+    params = {"param": f"{symbol},day,,,{days},qfq"}
+    url = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?" + urllib.parse.urlencode(params)
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Referer": "https://gu.qq.com/",
+            "User-Agent": "Mozilla/5.0 QuantAssistant/1.0",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=15) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+
+    data = (payload.get("data") or {}).get(symbol) or {}
+    rows = data.get("qfqday") or data.get("day") or data.get("hfqday") or []
+    parsed = []
+    for row in rows:
+        if len(row) < 6:
+            continue
+        parsed.append(
+            {
+                "date": row[0],
+                "open": row[1],
+                "close": row[2],
+                "high": row[3],
+                "low": row[4],
+                "volume": row[5],
+            }
+        )
+    return normalize_history(pd.DataFrame(parsed))
+
+
 def _scan_one(code: str, name: str, price: float, force_refresh: bool = False) -> dict[str, Any] | None:
     cache_key = f"scanner_{code}"
     if not force_refresh:
@@ -251,14 +291,22 @@ def _scan_one(code: str, name: str, price: float, force_refresh: bool = False) -
             cached["from_cache"] = True
             return cached
 
-    secid = _etf_secid(code)
+    klines = pd.DataFrame()
+    # Try Tencent first — covers all on-exchange funds (ETF + LOF) and has a hard timeout
     try:
-        # Use fetch_history which tries cache first, then AkShare → EastMoney → Tencent
-        end = date.today()
-        start = end - timedelta(days=80)
-        klines, _msgs = fetch_history(secid, start, end)
+        klines = _fetch_tencent_klines(code, days=120)
     except Exception:
-        return None
+        pass
+
+    # Fallback to fetch_history (cache → AkShare → EastMoney → Tencent)
+    if klines.empty or len(klines) < 20:
+        secid = _etf_secid(code)
+        try:
+            end = date.today()
+            start = end - timedelta(days=80)
+            klines, _msgs = fetch_history(secid, start, end)
+        except Exception:
+            return None
 
     factors = compute_factors(klines)
     if not factors:
