@@ -108,6 +108,10 @@ def parse_ocr_import_text(text: str) -> tuple[pd.DataFrame, dict[str, Any], list
 
 def parse_ocr_positions(text: str) -> pd.DataFrame:
     lines = [line.strip() for line in text.splitlines() if line.strip()]
+    screenshot_rows = _parse_multiline_stock_rows(lines) or _parse_multiline_fund_rows(lines)
+    if screenshot_rows:
+        return pd.DataFrame(screenshot_rows, columns=PORTFOLIO_COLUMNS)
+
     rows: list[dict[str, Any]] = []
     index = 0
     while index < len(lines):
@@ -141,13 +145,42 @@ def parse_ocr_summary(text: str) -> dict[str, Any]:
         "market_value": ["总市值"],
         "available_cash": ["可用", "股票可用"],
     }
+    pending_targets: list[str] = []
     for raw_line in text.splitlines():
         line = raw_line.strip()
         if not line:
             continue
+        if "名称/市值" in line or "持股/可卖" in line:
+            break
+        numbers = _numbers_from_line(line)
+        matched_targets = [
+            target
+            for target, keywords in patterns.items()
+            if any(keyword in line for keyword in keywords)
+        ]
+        if matched_targets:
+            if numbers:
+                for target in matched_targets:
+                    if summary[target] is None:
+                        summary[target] = numbers[-1]
+            else:
+                pending_targets.extend(
+                    target
+                    for target in matched_targets
+                    if target not in pending_targets
+                    and summary[target] is None
+                    and not (target == "holding_pnl" and line == "持有收益")
+                )
+            continue
+
+        if pending_targets and numbers:
+            target = pending_targets.pop(0)
+            if summary[target] is None:
+                summary[target] = numbers[-1]
+            continue
+
         for target, keywords in patterns.items():
             if any(keyword in line for keyword in keywords):
-                numbers = _numbers_from_line(line)
                 if numbers:
                     summary[target] = numbers[-1]
     return summary
@@ -229,6 +262,7 @@ def _is_numeric_token(token: str) -> bool:
 
 def _numbers_from_line(line: str) -> list[float]:
     values = []
+    line = re.sub(r"(?<!\d)(\d{1,3})\.(\d{3})\.(\d{2})(?!\d)", r"\1,\2.\3", line)
     number_pattern = r"(?<![A-Za-z0-9_\u4e00-\u9fff])[-+]?\d+(?:,\d{3})*(?:\.\d+)?%?(?![A-Za-z0-9_\u4e00-\u9fff])"
     for match in re.finditer(number_pattern, line):
         raw = match.group(0).replace(",", "").replace("%", "")
@@ -237,6 +271,263 @@ def _numbers_from_line(line: str) -> list[float]:
         except ValueError:
             continue
     return values
+
+
+def _number_tokens_from_line(line: str) -> list[dict[str, Any]]:
+    normalized = re.sub(r"(?<!\d)(\d{1,3})\.(\d{3})\.(\d{2})(?!\d)", r"\1,\2.\3", line)
+    number_pattern = r"(?<![A-Za-z0-9_\u4e00-\u9fff])[-+]?\d+(?:,\d{3})*(?:\.\d+)?%?(?![A-Za-z0-9_\u4e00-\u9fff])"
+    tokens: list[dict[str, Any]] = []
+    for match in re.finditer(number_pattern, normalized):
+        raw = match.group(0)
+        try:
+            value = float(raw.replace(",", "").replace("%", ""))
+        except ValueError:
+            continue
+        tokens.append(
+            {
+                "value": value,
+                "raw": raw,
+                "is_percent": raw.endswith("%"),
+                "is_signed": raw.startswith(("+", "-")),
+                "has_currency": "￥" in normalized[: match.end()],
+            }
+        )
+    return tokens
+
+
+def _clean_ocr_name(name: str) -> str:
+    return name.strip().rstrip("·…").strip()
+
+
+def _base_row(name: str) -> dict[str, Any]:
+    cleaned_name = _clean_ocr_name(name)
+    row = {column: None for column in PORTFOLIO_COLUMNS}
+    row["name"] = cleaned_name
+    row["tag"] = _infer_tag(cleaned_name)
+    proxy = _infer_market_proxy(cleaned_name, row["tag"])
+    if proxy:
+        row["market_proxy"] = proxy
+    return row
+
+
+def _is_stock_name_line(lines: list[str], index: int) -> bool:
+    name = _name_from_line(lines[index])
+    if not name:
+        return False
+    blocked = {
+        "自选",
+        "行情",
+        "发现",
+        "去券商",
+        "买入",
+        "卖出",
+        "撤单",
+        "交易记录",
+        "资金明细",
+        "银证转账",
+        "盈亏分析",
+        "股票基金",
+        "通用回购",
+        "报价回购",
+    }
+    if name in blocked or name.startswith("证券服务由"):
+        return False
+    if _numbers_from_line(lines[index]):
+        return False
+    return index + 1 < len(lines) and bool(_numbers_from_line(lines[index + 1]))
+
+
+def _parse_multiline_stock_rows(lines: list[str]) -> list[dict[str, Any]]:
+    if not any("名称/市值" in line for line in lines):
+        return []
+
+    start = next((index for index, line in enumerate(lines) if "名称/市值" in line), 0) + 1
+    rows: list[dict[str, Any]] = []
+    index = start
+    while index < len(lines):
+        if not _is_stock_name_line(lines, index):
+            index += 1
+            continue
+
+        name = _name_from_line(lines[index])
+        group: list[dict[str, Any]] = []
+        index += 1
+        while index < len(lines) and not _is_stock_name_line(lines, index):
+            if lines[index].startswith("证券服务由"):
+                break
+            group.extend(_number_tokens_from_line(lines[index]))
+            index += 1
+
+        row = _stock_row_from_tokens(str(name), group)
+        if row:
+            rows.append(row)
+
+    return rows
+
+
+def _stock_row_from_tokens(name: str, tokens: list[dict[str, Any]]) -> dict[str, Any] | None:
+    non_percent = [token for token in tokens if not token["is_percent"]]
+    percent_values = [token["value"] for token in tokens if token["is_percent"]]
+    if len(non_percent) < 3:
+        return None
+
+    row = _base_row(name)
+
+    shares_token = next(
+        (
+            token
+            for token in non_percent
+            if not token["is_signed"] and float(token["value"]).is_integer() and token["value"] > 0
+        ),
+        None,
+    )
+    if not shares_token:
+        return None
+    row["shares"] = shares_token["value"]
+
+    shares_index = non_percent.index(shares_token)
+    price_token = next(
+        (
+            token
+            for token in non_percent[shares_index + 1 :]
+            if "." in token["raw"] and not token["is_signed"] and 0 < token["value"] < 1000
+        ),
+        None,
+    )
+    if not price_token:
+        return None
+    row["price"] = price_token["value"]
+
+    expected_market_value = row["shares"] * row["price"]
+    market_candidates = [
+        token
+        for token in non_percent
+        if token not in (shares_token, price_token) and token["value"] > 0
+    ]
+    if market_candidates:
+        market_token = min(market_candidates, key=lambda token: abs(token["value"] - expected_market_value))
+        row["market_value"] = market_token["value"]
+    else:
+        market_token = None
+
+    cost_candidates = [
+        token
+        for token in non_percent
+        if token not in (shares_token, price_token, market_token)
+        and not token["is_signed"]
+        and "." in token["raw"]
+        and 0 < token["value"] < 1000
+    ]
+    if cost_candidates:
+        row["cost"] = min(cost_candidates, key=lambda token: abs(token["value"] - row["price"]))["value"]
+
+    pnl_token = next(
+        (
+            token
+            for token in non_percent
+            if token not in (shares_token, price_token, market_token)
+            and token["is_signed"]
+        ),
+        None,
+    )
+    if pnl_token:
+        row["holding_pnl"] = pnl_token["value"]
+    if percent_values:
+        row["holding_pnl_pct"] = percent_values[-1]
+    return row
+
+
+_FUND_NAME_PREFIXES = (
+    "易方达",
+    "天弘",
+    "大成",
+    "博时",
+    "广发",
+    "华宝",
+    "华夏",
+    "嘉实",
+    "南方",
+    "招商",
+    "富国",
+    "鹏华",
+    "工银",
+    "国泰",
+    "汇添富",
+    "景顺",
+    "银华",
+    "中欧",
+    "兴全",
+    "诺安",
+    "交银",
+    "建信",
+    "农银",
+    "长城",
+    "万家",
+    "平安",
+)
+
+
+def _is_fund_name_line(line: str) -> bool:
+    name = _name_from_line(line)
+    if not name or _numbers_from_line(line):
+        return False
+    cleaned_name = _clean_ocr_name(name)
+    return any(cleaned_name.startswith(prefix) for prefix in _FUND_NAME_PREFIXES)
+
+
+def _parse_multiline_fund_rows(lines: list[str]) -> list[dict[str, Any]]:
+    if not any("账户资产" in line for line in lines):
+        return []
+
+    rows: list[dict[str, Any]] = []
+    index = 0
+    while index < len(lines):
+        if not _is_fund_name_line(lines[index]):
+            index += 1
+            continue
+
+        name = str(_name_from_line(lines[index]))
+        group: list[dict[str, Any]] = []
+        index += 1
+        while index < len(lines) and not _is_fund_name_line(lines[index]):
+            group.extend(_number_tokens_from_line(lines[index]))
+            index += 1
+
+        row = _fund_row_from_tokens(name, group)
+        if row:
+            rows.append(row)
+
+    return rows
+
+
+def _fund_row_from_tokens(name: str, tokens: list[dict[str, Any]]) -> dict[str, Any] | None:
+    row = _base_row(name)
+    non_percent = [token for token in tokens if not token["is_percent"]]
+    percent_values = [token["value"] for token in tokens if token["is_percent"]]
+
+    market_token = next((token for token in non_percent if token["has_currency"]), None)
+    if not market_token:
+        positive_values = [token for token in non_percent if token["value"] > 10]
+        if positive_values:
+            market_token = max(positive_values, key=lambda token: token["value"])
+    if not market_token:
+        return None
+
+    row["market_value"] = market_token["value"]
+    pnl_token = next(
+        (
+            token
+            for token in non_percent
+            if token is not market_token and token["is_signed"]
+        ),
+        None,
+    )
+    if pnl_token:
+        row["holding_pnl"] = pnl_token["value"]
+    if percent_values:
+        row["last_daily_pct"] = percent_values[0]
+        row["holding_pnl_pct"] = percent_values[-1]
+    return row
 
 
 def _position_row(name: str, numbers: list[float], source: str) -> dict[str, Any]:

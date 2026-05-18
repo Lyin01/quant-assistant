@@ -229,6 +229,177 @@ def test_parse_ocr_import_text_keeps_account_summary_separate_from_positions():
     assert positions[0]["name"] == "示例基金"
 
 
+def test_parse_stock_screenshot_multiline_ocr():
+    text = """
+    总资产(元）>
+    今日盈亏》
+    持仓盈亏
+    9,703.93
+    -141.15
+    -156.37
+    总市值
+    可用
+    转账
+    9,681.90
+    22.03
+    名称/市值=
+    持股/可卖=
+    现价/成本=
+    持仓盈亏
+    沃尔核材
+    100
+    21.760
+    -124.02
+    2,176.00
+    100
+    23.000
+    -5.39%
+    通宇通讯
+    100
+    51.640
+    -58.25
+    5,164.00
+    52.223
+    -1.12%
+    纳指大成
+    900
+    1.719
+    -5.00
+    1,547.10
+    900
+    1.725
+    -0.32%
+    创新药
+    300
+    0.784
+    -12.20
+    300
+    0.825
+    235.20
+    -4.93%
+    半导体
+    100
+    2.077
+    +0.60
+    207.70
+    100
+    2.071
+    +0.29%
+    机器人
+    300
+    1.173
+    +42.50
+    351.90
+    300
+    1.031
+    +13.74%
+    证券服务由国信证券提供，客服电话95536
+    自选
+    行情
+    """
+
+    parsed, summary, positions = parse_ocr_import_text(text)
+
+    assert summary["total_assets"] == 9703.93
+    assert summary["today_pnl"] == -141.15
+    assert summary["holding_pnl"] == -156.37
+    assert summary["market_value"] == 9681.90
+    assert summary["available_cash"] == 22.03
+    assert list(parsed["name"]) == ["沃尔核材", "通宇通讯", "纳指大成", "创新药", "半导体", "机器人"]
+
+    walter = next(item for item in positions if item["name"] == "沃尔核材")
+    assert walter["market_value"] == 2176.0
+    assert walter["shares"] == 100
+    assert walter["price"] == 21.76
+    assert walter["cost"] == 23.0
+    assert walter["holding_pnl"] == -124.02
+    assert walter["holding_pnl_pct"] == -5.39
+
+    innovative_drug = next(item for item in positions if item["name"] == "创新药")
+    assert innovative_drug["market_value"] == 235.2
+    assert innovative_drug["price"] == 0.784
+    assert innovative_drug["cost"] == 0.825
+
+
+def test_parse_fund_screenshot_multiline_ocr():
+    text = """
+    账户资产
+    二 场内穿透
+    17.869.32
+    +11.95
+    关联板块
+    当日收益
+    持有收益
+    05-18
+    05-18
+    05-18
+    易方达中证500··
+    +0.22%
+    -161.14
+    中证500指数
+    ￥ 5510.16
+    -2.84%
+    天弘中证人工
+    +0.87%
+    +50.16
+    ￥450.16
+    中证人工智能
+    +12.54%
+    大成纳斯达克1··
+    -1.54%
+    +59.95
+    ￥2059.95 05-15
+    纳斯达克100
+    +3.00%
+    易方达稳健收·
+    -0.06%
+    -1.21
+    混债
+    ￥ 398.79
+    -0.30%
+    博时标普500E··
+    -1.24%
+    +9.18
+    ￥ 109.18 05-15
+    标普500
+    +9.18%
+    广发中证军工E·
+    -0.07%
+    -124.95
+    ￥ 1345.14
+    中证军工
+    -8.50%
+    华宝纳斯达克··
+    -1.33%
+    +269.53
+    ￥3145.75 05-15
+    纳斯达克精选
+    +9.37%
+    """
+
+    parsed, summary, positions = parse_ocr_import_text(text)
+
+    assert summary["total_assets"] == 17869.32
+    assert summary["today_pnl"] == 11.95
+    assert summary["holding_pnl"] is None
+    assert list(parsed["name"]) == [
+        "易方达中证500",
+        "天弘中证人工",
+        "大成纳斯达克1",
+        "易方达稳健收",
+        "博时标普500E",
+        "广发中证军工E",
+        "华宝纳斯达克",
+    ]
+
+    midcap = next(item for item in positions if item["name"] == "易方达中证500")
+    assert midcap["market_value"] == 5510.16
+    assert midcap["last_daily_pct"] == 0.22
+    assert midcap["holding_pnl"] == -161.14
+    assert midcap["holding_pnl_pct"] == -2.84
+    assert midcap["market_proxy"] == "中证500"
+
+
 def test_update_account_from_import_stock_uses_summary_total_not_mixed_position_sum():
     account = {
         "name": "国信证券",
