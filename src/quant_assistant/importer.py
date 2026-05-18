@@ -122,11 +122,10 @@ def parse_ocr_positions(text: str) -> pd.DataFrame:
 
 def parse_ocr_summary(text: str) -> dict[str, Any]:
     summary: dict[str, Any] = {column: None for column in SUMMARY_COLUMNS}
-    lowered = text.lower()
-    if "股票/基金" in text or "国信证券" in text or "总市值" in text or "可用" in text:
-        summary["account_type"] = "stock"
-    elif "支付宝" in text or "基金" in text or "账户资产" in text:
-        summary["account_type"] = "fund"
+
+    # 不再自动推断 account_type：
+    # "总市值"/"可用" 在基金截图中也很常见（可用份额、可用金额），极易误判。
+    # 账户类型交给 detect_target_account 用预设和持仓特征（是否有 shares）判断。
 
     patterns = {
         "total_assets": ["总资产", "账户资产", "基金资产", "股票资产"],

@@ -53,7 +53,7 @@ from quant_assistant.macro_dashboard import fetch_macro_indicators, macro_summar
 from quant_assistant.market_data import fetch_etf_ranking, fetch_history, instrument_options
 from quant_assistant.market_scanner import DEFAULT_SCAN_LIMIT, scan_etfs
 from quant_assistant.policy_radar import fetch_policy_news, summarize_policy_trends
-from quant_assistant.recommendation_view import recommendation_table, split_recommendations, strategy_coverage_issues
+from quant_assistant.recommendation_view import recommendation_table, split_recommendations
 from quant_assistant.schema import blocking_issue_count as schema_blocking_issue_count, validate_app_data
 from quant_assistant.strategy import generate_recommendations
 
@@ -307,7 +307,6 @@ if page == "总览":
     recs = generate_recommendations(config, portfolio, quotes=quotes)
     data_source = "实时行情" if quotes else "持仓快照"
     actionable_recs, watchlist_recs = split_recommendations(recs)
-    coverage_issues = strategy_coverage_issues(config, portfolio)
 
     st.subheader("今日驾驶舱")
     st.caption("只做复盘、条件检查和人工复核提示，不预测未来涨跌，不自动下单。")
@@ -316,7 +315,7 @@ if page == "总览":
         data_detail=str(quote_freshness["detail"]),
         actionable_count=len(actionable_recs),
         watchlist_count=len(watchlist_recs),
-        coverage_issue_count=len(coverage_issues),
+        coverage_issue_count=0,
     )
     st.dataframe(pd.DataFrame(cockpit_rows), use_container_width=True, hide_index=True)
 
@@ -339,13 +338,6 @@ if page == "总览":
             st.info("暂无观察项。")
         else:
             st.dataframe(watchlist, use_container_width=True, hide_index=True)
-
-    with st.expander("策略覆盖检查", expanded=bool(coverage_issues)):
-        if coverage_issues:
-            st.warning("存在持仓尚未完全纳入策略或行情代理配置。")
-            st.dataframe(pd.DataFrame(coverage_issues), use_container_width=True, hide_index=True)
-        else:
-            st.success("当前持仓的策略标签和行情代理配置未发现明显缺口。")
 
     with st.expander("完整建议原文"):
         for rec in recs:

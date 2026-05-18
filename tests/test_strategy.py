@@ -219,7 +219,6 @@ def test_parse_fund_ocr_format_and_summary():
     summary = parse_ocr_summary(text)
     frame = parse_ocr_positions(text)
 
-    assert summary["account_type"] == "fund"
     assert summary["total_assets"] == 18118.73
     assert summary["today_pnl"] == -228.25
     assert list(frame["name"]) == ["易方达中证500", "天弘中证电网设备"]
