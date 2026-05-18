@@ -1,4 +1,10 @@
-from quant_assistant.importer import _infer_market_proxy, _infer_tag, merge_positions, recalc_account_summary
+from quant_assistant.importer import (
+    _infer_market_proxy,
+    _infer_tag,
+    merge_positions,
+    recalc_account_summary,
+    update_account_from_import,
+)
 
 
 def test_infer_tag_wide_index():
@@ -163,3 +169,45 @@ def test_merge_positions_infers_market_proxy_for_new_holdings():
     assert len(merged) == 2
     new_pos = next(p for p in merged if p["name"] == "易方达中证500")
     assert new_pos["market_proxy"] == "中证500"
+
+
+def test_update_account_from_import_preserves_ocr_summary_totals():
+    """截图摘要总资产比 OCR 明细更权威，不能被明细合计覆盖。"""
+    account = {
+        "name": "支付宝基金",
+        "total_assets": 0.0,
+        "today_pnl": 0.0,
+        "positions": [],
+    }
+    imported = [
+        {"name": "易方达中证500", "tag": "wide_index", "market_value": 5594.65},
+        {"name": "天弘中证电网设备", "tag": "power_grid", "market_value": 3270.40},
+    ]
+    summary = {
+        "total_assets": 18118.73,
+        "today_pnl": -228.25,
+    }
+
+    updated = update_account_from_import(account, imported, "fund", summary)
+
+    assert updated["total_assets"] == 18118.73
+    assert updated["today_pnl"] == -228.25
+    assert len(updated["positions"]) == 2
+
+
+def test_update_account_from_import_recalculates_when_summary_is_missing():
+    account = {
+        "name": "国信证券",
+        "total_assets": 0.0,
+        "available_cash": 1000.0,
+        "positions": [],
+    }
+    imported = [
+        {"name": "半导体", "tag": "semiconductor", "market_value": 203.5},
+        {"name": "沃尔核材", "tag": "imported", "market_value": 2249.0},
+    ]
+
+    updated = update_account_from_import(account, imported, "stock")
+
+    assert updated["market_value"] == 2452.5
+    assert updated["total_assets"] == 3452.5

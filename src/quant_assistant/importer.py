@@ -410,6 +410,21 @@ def merge_account_summary(
     return updated
 
 
+def update_account_from_import(
+    existing_account: dict[str, Any],
+    imported_positions: list[dict[str, Any]],
+    account_key: str,
+    summary: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Merge imported positions and refresh account totals for overview display."""
+    updated = dict(existing_account)
+    updated["positions"] = merge_positions(existing_account.get("positions", []), imported_positions)
+    updated = recalc_account_summary(updated, account_key)
+    if summary:
+        updated = merge_account_summary(updated, summary)
+    return updated
+
+
 def recalc_account_summary(account: dict[str, Any], account_key: str = "") -> dict[str, Any]:
     """Recalculate account totals from current positions.
 

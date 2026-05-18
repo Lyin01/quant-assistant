@@ -38,14 +38,12 @@ from quant_assistant.user_data import get_or_create_portfolio, load_config, save
 from quant_assistant.importer import (
     _infer_tag,
     dataframe_to_positions,
-    merge_account_summary,
-    merge_positions,
     normalize_import_table,
-    recalc_account_summary,
     parse_ocr_positions,
     parse_ocr_summary,
     read_uploaded_table,
     template_frame,
+    update_account_from_import,
 )
 from quant_assistant.import_review import blocking_issue_count, detect_target_account, import_review_issues, merge_parsed_frames
 from quant_assistant.commodity_chain import chain_summary, fetch_chain_prices, list_chains
@@ -554,9 +552,8 @@ elif page == "导入持仓":
             target = portfolio["accounts"][csv_account_choice]
             previous_snapshot = dict(target)
 
-            merged = merge_positions(target["positions"], positions)
-            target["positions"] = merged
-            target = recalc_account_summary(target, csv_account_choice)
+            target = update_account_from_import(target, positions, csv_account_choice)
+            merged = target["positions"]
             portfolio["accounts"][csv_account_choice] = target
             portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
 
@@ -742,14 +739,10 @@ elif page == "导入持仓":
                 # Save snapshot before change
                 previous_snapshot = dict(target_account)
 
-                merged_positions = merge_positions(target_account["positions"], parsed_positions)
                 summary_account = summary.get("account_type") if summary else None
-                if summary and (summary_account is None or summary_account == selected_account):
-                    updated_account = merge_account_summary(target_account, summary)
-                else:
-                    updated_account = dict(target_account)
-                updated_account["positions"] = merged_positions
-                updated_account = recalc_account_summary(updated_account, selected_account)
+                import_summary = summary if summary and (summary_account is None or summary_account == selected_account) else None
+                updated_account = update_account_from_import(target_account, parsed_positions, selected_account, import_summary)
+                merged_positions = updated_account["positions"]
                 portfolio["accounts"][selected_account] = updated_account
                 portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
 
@@ -820,8 +813,9 @@ elif page == "导入持仓":
                 "holding_pnl_pct": manual_profit_pct,
             }
             target = portfolio["accounts"][manual_account]
-            merged = merge_positions(target["positions"], [new_position])
-            target["positions"] = merged
+            target = update_account_from_import(target, [new_position], manual_account)
+            merged = target["positions"]
+            portfolio["accounts"][manual_account] = target
             portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
             save_portfolio(user, portfolio)
             reload_portfolio()
