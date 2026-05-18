@@ -66,7 +66,9 @@ def _clean_portfolio(data: dict[str, Any]) -> dict[str, Any]:
     for account_key in ("fund", "stock"):
         account = data.get("accounts", {}).get(account_key, {})
         positions = account.get("positions", [])
-        cleaned = []
+        deduped: list[dict[str, Any]] = []
+        seen_keys: list[tuple[str, int]] = []  # (dedup_key, index into deduped)
+
         for pos in positions:
             name = str(pos.get("name", "")).strip()
             if not name:
@@ -81,6 +83,9 @@ def _clean_portfolio(data: dict[str, Any]) -> dict[str, Any]:
                 if name.endswith(suffix):
                     name = name[: -len(suffix)].rstrip("· ").strip()
                     break
+            # Filter garbage names
+            if _is_garbage_name(name):
+                continue
             pos["name"] = name
             # Fix negative or zero market_value for fund positions
             mv = pos.get("market_value")
@@ -90,10 +95,107 @@ def _clean_portfolio(data: dict[str, Any]) -> dict[str, Any]:
                         pos["market_value"] = 0
                 except (TypeError, ValueError):
                     pass
-            cleaned.append(pos)
-        if cleaned:
-            data["accounts"][account_key]["positions"] = cleaned
+            # Deduplicate: keep the entry with richer data
+            dkey = _dedup_key(name)
+            matched_idx = None
+            for key, idx in seen_keys:
+                if _dedup_keys_match(key, dkey):
+                    matched_idx = idx
+                    break
+            if matched_idx is not None:
+                # Compare: keep the one with more fields filled
+                existing = deduped[matched_idx]
+                if _richness(pos) > _richness(existing):
+                    deduped[matched_idx] = pos
+            else:
+                seen_keys.append((dkey, len(deduped)))
+                deduped.append(pos)
+
+        if deduped:
+            data["accounts"][account_key]["positions"] = deduped
     return data
+
+
+def _richness(pos: dict[str, Any]) -> int:
+    """Count how many meaningful fields a position has."""
+    score = 0
+    for field in ("market_value", "shares", "price", "cost", "holding_pnl",
+                  "holding_pnl_pct", "last_daily_pct", "market_proxy", "tag"):
+        val = pos.get(field)
+        if val is not None and val != "" and val != "imported":
+            score += 1
+    return score
+
+
+def _dedup_keys_match(key_a: str, key_b: str) -> bool:
+    """Check if two dedup keys refer to the same fund.
+
+    Handles OCR truncation where one name may be a prefix of the other.
+    e.g. "中证电网" matches "中证电网设备" (truncated by OCR).
+    """
+    if key_a == key_b:
+        return True
+    if not key_a or not key_b:
+        return False
+    # One is a prefix of the other (OCR truncation)
+    shorter, longer = (key_a, key_b) if len(key_a) <= len(key_b) else (key_b, key_a)
+    if len(longer) - len(shorter) <= 4 and longer.startswith(shorter):
+        return True
+    return False
+
+
+_GARBAGE_NAMES = {
+    "中", "RK", "rK", "Rk", "rk", "S", "s", "A", "a", "B", "b", "C", "c",
+    "名称", "持仓", "市值", "现价", "成本", "可用", "自选",
+}
+
+
+def _is_garbage_name(name: str) -> bool:
+    """Check if a position name is obviously garbage/corrupted."""
+    if len(name) < 2:
+        return True
+    if name in _GARBAGE_NAMES:
+        return True
+    # Pure ASCII single-letter tokens that aren't real fund names
+    if len(name) <= 2 and name.isascii() and not any(c.isdigit() for c in name):
+        return True
+    # Names that are just numbers or punctuation
+    import re
+    if re.fullmatch(r"[\d\s.,;:!?%+\-*/=()]+", name):
+        return True
+    return False
+
+
+_FUND_HOUSES = (
+    "易方达", "天弘", "大成", "博时", "广发", "华宝", "华夏", "嘉实", "南方",
+    "招商", "富国", "鹏华", "工银", "国泰", "汇添富", "景顺", "银华", "中欧",
+    "兴全", "诺安", "交银", "建信", "农银", "长城", "万家", "平安", "海富通",
+    "国联安", "华安", "中银", "信达澳银", "东吴", "长盛", "宝盈", "中海",
+    "金鹰", "泰达宏利", "新华", "信诚", "益民", "银河", "中邮",
+)
+
+
+def _dedup_key(name: str) -> str:
+    """Generate a normalized key for deduplication.
+
+    Strips fund house prefixes and common suffixes to compare the core fund identity.
+    e.g. "天弘中证电网设备" → "中证电网", "中证电网设备" → "中证电网"
+    """
+    import re
+    core = name
+    # Strip known fund house prefixes
+    for prefix in _FUND_HOUSES:
+        if core.startswith(prefix):
+            core = core[len(prefix):]
+            break
+    # Strip common fund type suffixes
+    for suffix in ("ETF联接", "ETF", "联接", "指数", "定投小仓", "定投大仓", "定投", "大仓", "小仓"):
+        if core.endswith(suffix):
+            core = core[:-len(suffix)]
+            break
+    # Remove remaining punctuation and whitespace
+    core = re.sub(r"[\s·、，。\-]", "", core)
+    return core.lower()
 
 
 def _seed_portfolio_from_global() -> dict[str, Any]:

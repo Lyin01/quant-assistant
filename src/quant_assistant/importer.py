@@ -84,6 +84,7 @@ def dataframe_to_positions(frame: pd.DataFrame) -> list[dict[str, Any]]:
             "id": _position_id(name, index),
             "name": str(name).strip(),
             "tag": _clean(row.get("tag")) or "imported",
+            "_dedup_key": _name_dedup_key(str(name).strip()),
         }
         for column in PORTFOLIO_COLUMNS:
             if column in {"name", "tag"}:
@@ -656,43 +657,93 @@ def merge_positions(
 ) -> list[dict[str, Any]]:
     """Merge imported positions into existing ones (additive). Updates matching names, preserves unmatched."""
     imported_by_name: dict[str, dict[str, Any]] = {}
+    imported_keys: list[tuple[str, dict[str, Any]]] = []
     for pos in imported_positions:
         imported_by_name[pos.get("name", "")] = pos
+        key = pos.get("_dedup_key", "")
+        if key:
+            imported_keys.append((key, pos))
 
     merged: list[dict[str, Any]] = []
-    used_names: set[str] = set()
+    used_imports: set[int] = set()
 
     for existing in existing_positions:
         name = existing.get("name", "")
+        existing_key = _name_dedup_key(name)
         imp = imported_by_name.get(name)
+        if not imp and existing_key:
+            for idx, (ikey, ipos) in enumerate(imported_keys):
+                if idx in used_imports:
+                    continue
+                if _merge_keys_match(existing_key, ikey):
+                    imp = ipos
+                    used_imports.add(idx)
+                    break
         if imp:
-            # 以现有数据为底，只覆盖导入数据中非空的字段
+            used_imports.add(id(imp))
             updated = dict(existing)
             for field, value in imp.items():
+                if field.startswith("_"):
+                    continue
                 if _has_value(value):
                     updated[field] = value
-            # id/tag/market_proxy 永远以现有为准（除非导入明确指定了有效值）
             for field in ("id", "tag", "market_proxy"):
                 if field in existing and existing[field]:
                     if not imp.get(field) or imp[field] == "imported":
                         updated[field] = existing[field]
             merged.append(updated)
-            used_names.add(name)
         else:
             merged.append(existing)
 
     for imp in imported_positions:
+        if id(imp) in used_imports:
+            continue
         name = imp.get("name", "")
-        if name not in used_names:
-            if not imp.get("tag") or imp["tag"] == "imported":
-                imp["tag"] = _infer_tag(name)
-            if not imp.get("market_proxy"):
-                proxy = _infer_market_proxy(name, imp.get("tag", "imported"))
-                if proxy:
-                    imp["market_proxy"] = proxy
-            merged.append(imp)
+        if not imp.get("tag") or imp["tag"] == "imported":
+            imp["tag"] = _infer_tag(name)
+        if not imp.get("market_proxy"):
+            proxy = _infer_market_proxy(name, imp.get("tag", "imported"))
+            if proxy:
+                imp["market_proxy"] = proxy
+        merged.append(imp)
 
     return merged
+
+
+_FUND_HOUSES_MERGE = (
+    "易方达", "天弘", "大成", "博时", "广发", "华宝", "华夏", "嘉实", "南方",
+    "招商", "富国", "鹏华", "工银", "国泰", "汇添富", "景顺", "银华", "中欧",
+    "兴全", "诺安", "交银", "建信", "农银", "长城", "万家", "平安", "海富通",
+    "国联安", "华安", "中银", "信达澳银", "东吴", "长盛", "宝盈", "中海",
+    "金鹰", "泰达宏利", "新华", "信诚", "益民", "银河", "中邮",
+)
+
+
+def _name_dedup_key(name: str) -> str:
+    """Normalized key for deduplication (strips fund house prefix + type suffix)."""
+    core = name
+    for prefix in _FUND_HOUSES_MERGE:
+        if core.startswith(prefix):
+            core = core[len(prefix):]
+            break
+    for suffix in ("ETF联接", "ETF", "联接", "指数", "定投小仓", "定投大仓", "定投", "大仓", "小仓"):
+        if core.endswith(suffix):
+            core = core[:-len(suffix)]
+            break
+    core = re.sub(r"[\s·、，。\-]", "", core)
+    return core.lower()
+
+
+def _merge_keys_match(key_a: str, key_b: str) -> bool:
+    """Check if two dedup keys refer to the same fund (handles OCR truncation)."""
+    if key_a == key_b:
+        return True
+    if not key_a or not key_b:
+        return False
+    shorter, longer = (key_a, key_b) if len(key_a) <= len(key_b) else (key_b, key_a)
+    if len(longer) - len(shorter) <= 4 and longer.startswith(shorter):
+        return True
+    return False
 
 
 def merge_account_summary(
