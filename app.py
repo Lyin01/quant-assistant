@@ -41,7 +41,7 @@ from quant_assistant.macro_dashboard import fetch_macro_indicators, macro_summar
 from quant_assistant.market_data import fetch_etf_ranking, fetch_history, instrument_options
 from quant_assistant.market_scanner import DEFAULT_SCAN_LIMIT, scan_etfs
 from quant_assistant.policy_radar import fetch_policy_news, summarize_policy_trends
-from quant_assistant.recommendation_view import recommendation_table, split_recommendations
+from quant_assistant.recommendation_view import portfolio_holdings_table, recommendation_table, split_recommendations
 from quant_assistant.schema import blocking_issue_count as schema_blocking_issue_count, validate_app_data
 from quant_assistant.strategy import generate_recommendations
 
@@ -120,21 +120,6 @@ def reload_portfolio() -> None:
     cached_quotes.clear()
 
 
-def _quote_frame(quotes: dict) -> pd.DataFrame:
-    return pd.DataFrame(
-        [
-            {
-                "名称": quote.name,
-                "代码": quote.code,
-                "价格": quote.price,
-                "涨跌幅%": quote.pct,
-                "时间": quote.time_text,
-            }
-            for quote in quotes.values()
-        ]
-    )
-
-
 def _kline_figure(frame: pd.DataFrame, name: str) -> go.Figure:
     figure = go.Figure()
     figure.add_trace(
@@ -200,8 +185,7 @@ if page == "总览":
     col1.metric("基金资产", f'{fund["total_assets"]:,.2f}', f'{fund["today_pnl"]:,.2f}')
     col2.metric("股票资产", f'{stock["total_assets"]:,.2f}', f'{stock["today_pnl"]:,.2f}')
 
-    st.subheader("行情快照")
-    st.caption(quote_status(config))
+    st.subheader("我的持仓数据")
     btn_col1, btn_col2 = st.columns(2)
     load_quotes = btn_col1.button("刷新行情并重算建议", type="primary")
     if btn_col2.button("从文件刷新持仓"):
@@ -210,23 +194,28 @@ if page == "总览":
     if load_quotes:
         cached_quotes.clear()
 
+    holdings = portfolio_holdings_table(portfolio)
+    if holdings.empty:
+        st.info("当前没有持仓数据。")
+    else:
+        st.dataframe(holdings, use_container_width=True, hide_index=True)
+
     with st.spinner("正在获取行情..."):
         quotes, quote_messages = cached_quotes(_current_user_id(), json.dumps(config), json.dumps(portfolio))
 
     quote_freshness = assess_quote_freshness([q.time_text for q in quotes.values() if q.time_text])
-    if quote_freshness["reliable"]:
-        st.info(f'{quote_freshness["status"]}：{quote_freshness["detail"]}')
-    else:
-        st.warning(f'{quote_freshness["status"]}：{quote_freshness["detail"]}')
-
-    if quotes:
-        latest_time = max((q.time_text for q in quotes.values() if q.time_text), default="")
-        st.caption(f"行情更新时间: {latest_time or '未知'}")
-        st.dataframe(_quote_frame(quotes), use_container_width=True, hide_index=True)
-    else:
-        st.warning("未获取到实时行情，策略将降级使用 portfolio.json 里的 last_daily_pct 快照值。")
 
     with st.expander("行情源状态", expanded=not bool(quotes)):
+        st.caption(quote_status(config))
+        if quotes:
+            latest_time = max((q.time_text for q in quotes.values() if q.time_text), default="")
+            st.write(f"行情更新时间: {latest_time or '未知'}")
+        else:
+            st.warning("未获取到实时行情，策略将降级使用 portfolio.json 里的 last_daily_pct 快照值。")
+        if quote_freshness["reliable"]:
+            st.info(f'{quote_freshness["status"]}：{quote_freshness["detail"]}')
+        else:
+            st.warning(f'{quote_freshness["status"]}：{quote_freshness["detail"]}')
         for message in friendly_source_messages(quote_messages):
             st.write(message)
 

@@ -1,6 +1,7 @@
 import pandas as pd
 
 from quant_assistant.recommendation_view import (
+    portfolio_holdings_table,
     recommendation_table,
     split_recommendations,
     strategy_coverage_issues,
@@ -32,6 +33,61 @@ def test_recommendation_table_includes_data_source():
     assert list(frame.columns) == ["动作", "标的", "数量/金额", "数据来源", "原因"]
     assert frame.loc[0, "数据来源"] == "实时行情"
     assert frame.loc[0, "标的"] == "半导体"
+
+
+def test_portfolio_holdings_table_flattens_accounts():
+    portfolio = {
+        "accounts": {
+            "fund": {
+                "positions": [
+                    {
+                        "name": "易方达中证500",
+                        "tag": "wide_index",
+                        "market_value": 5510.16,
+                        "holding_pnl": -161.14,
+                        "holding_pnl_pct": -2.84,
+                        "market_proxy": "中证500",
+                        "last_daily_pct": 0.22,
+                    }
+                ]
+            },
+            "stock": {
+                "positions": [
+                    {
+                        "name": "半导体",
+                        "tag": "semiconductor",
+                        "market_value": 207.7,
+                        "holding_pnl": 0.6,
+                        "holding_pnl_pct": 0.29,
+                        "shares": 100,
+                        "price": 2.077,
+                        "cost": 2.071,
+                        "market_proxy": "半导体",
+                    }
+                ]
+            },
+        }
+    }
+
+    frame = portfolio_holdings_table(portfolio)
+
+    assert list(frame.columns) == [
+        "账户",
+        "标的",
+        "策略标签",
+        "市值",
+        "持仓盈亏",
+        "持仓收益%",
+        "持股",
+        "现价",
+        "成本",
+        "行情代理",
+        "快照涨跌%",
+    ]
+    assert frame.loc[0, "账户"] == "支付宝基金"
+    assert frame.loc[0, "标的"] == "易方达中证500"
+    assert frame.loc[1, "账户"] == "国信证券"
+    assert frame.loc[1, "持股"] == 100
 
 
 def test_strategy_coverage_ignores_imported_tag():
