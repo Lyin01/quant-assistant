@@ -108,7 +108,7 @@
         {
           "id": "walter_nuclear",
           "name": "沃尔核材",
-          "tag": "imported",
+          "tag": "short_term",
           "shares": 100,
           "price": 21.730,
           "cost": 23.000,
@@ -120,7 +120,7 @@
         {
           "id": "tongyu_comm",
           "name": "通宇通讯",
-          "tag": "imported",
+          "tag": "short_term",
           "shares": 100,
           "price": 50.270,
           "cost": 52.223,

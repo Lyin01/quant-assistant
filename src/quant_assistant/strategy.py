@@ -124,7 +124,10 @@ def _fund_recommendations(
 
         elif tag == "tactical_ai":
             rule = rules["tactical_ai"]
-            if daily_pct >= rule["sell_daily_pct"] and profit_pct >= rule["sell_profit_pct"]:
+            absolute_pct = rule.get("absolute_sell_profit_pct", 999)
+            if profit_pct >= absolute_pct:
+                recs.append(_sell_money(name, rule.get("absolute_sell_amount", rule["sell_amount"]), f"AI 大仓持有收益 {profit_pct:.2f}% 超过绝对止盈线 {absolute_pct:.0f}%，无条件减仓。"))
+            elif daily_pct >= rule["sell_daily_pct"] and profit_pct >= rule["sell_profit_pct"]:
                 recs.append(_sell_money(name, rule["sell_amount"], f"AI 大仓涨幅 {daily_pct:.2f}%，持有收益 {profit_pct:.2f}%，触发止盈。"))
             elif daily_pct <= rule["buy_pullback_pct"] and deployable_cash >= rule["buy_amount"]:
                 recs.append(_buy_money(name, rule["buy_amount"], f"AI 回撤 {daily_pct:.2f}%，触发小额低吸。"))
@@ -210,7 +213,11 @@ def _stock_recommendations(
 
         elif tag == "robot":
             rule = rules["robot"]
-            if profit_pct >= rule["sell_profit_pct"]:
+            tier2_pct = rule.get("sell_profit_pct_tier2", 999)
+            tier2_shares = rule.get("sell_shares_tier2", rule["sell_shares"])
+            if profit_pct >= tier2_pct:
+                recs.append(_sell_shares(name, tier2_shares, f"机器人持有收益 {profit_pct:.2f}% 超过二档止盈线 {tier2_pct:.0f}%，加速减仓。"))
+            elif profit_pct >= rule["sell_profit_pct"]:
                 recs.append(_sell_shares(name, rule["sell_shares"], f"机器人持有收益 {profit_pct:.2f}%，触发止盈。"))
             elif rule["pullback_buy_price_low"] <= price <= rule["pullback_buy_price_high"]:
                 recs.append(_buy_shares(name, rule["pullback_buy_shares"], f"机器人回到 {price:.3f}，处于计划低吸区间。"))
@@ -223,6 +230,18 @@ def _stock_recommendations(
                 recs.append(_sell_shares(name, rule["sell_shares"], f"创新药收益 {profit_pct:.2f}%，触发止盈。"))
             else:
                 recs.append(_hold(name, f"创新药收益 {profit_pct:.2f}%，未触发止盈。 {warn}" if warn else f"创新药收益 {profit_pct:.2f}%，未触发止盈。"))
+
+        elif tag == "short_term":
+            rule = rules.get("short_term", {})
+            stop_loss = rule.get("stop_loss_pct", -10.0)
+            take_profit = rule.get("sell_profit_pct", 10.0)
+            sell_shares_count = rule.get("sell_shares", 100)
+            if profit_pct <= stop_loss:
+                recs.append(_sell_shares(name, shares, f"短线止损：{name} 亏损 {profit_pct:.2f}% 超过止损线 {stop_loss:.0f}%，全部卖出。"))
+            elif profit_pct >= take_profit:
+                recs.append(_sell_shares(name, sell_shares_count, f"短线止盈：{name} 收益 {profit_pct:.2f}%，触发止盈。"))
+            else:
+                recs.append(_hold(name, f"短线持有，收益 {profit_pct:.2f}%（止损 {stop_loss:.0f}% / 止盈 {take_profit:.0f}%）。 {warn}" if warn else f"短线持有，收益 {profit_pct:.2f}%（止损 {stop_loss:.0f}% / 止盈 {take_profit:.0f}%）。"))
 
         elif tag == "overseas":
             rule = rules["overseas"]

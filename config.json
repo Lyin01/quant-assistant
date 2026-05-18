@@ -13,7 +13,7 @@
   },
   "rules": {
     "wide_index": {
-      "deploy_when_cash_above": 9000,
+      "deploy_when_cash_above": 3000,
       "daily_pct_max_for_buy": 0.5,
       "daily_pct_strong_buy": -1.0,
       "normal_buy_amount": 1000,
@@ -23,6 +23,8 @@
       "sell_daily_pct": 1.5,
       "sell_profit_pct": 12.0,
       "sell_amount": 500,
+      "absolute_sell_profit_pct": 22.0,
+      "absolute_sell_amount": 500,
       "buy_pullback_pct": -3.0,
       "buy_amount": 500
     },
@@ -45,6 +47,8 @@
     "robot": {
       "sell_profit_pct": 12.0,
       "sell_shares": 100,
+      "sell_profit_pct_tier2": 18.0,
+      "sell_shares_tier2": 200,
       "pullback_buy_price_low": 1.08,
       "pullback_buy_price_high": 1.10,
       "pullback_buy_shares": 100
@@ -53,6 +57,11 @@
       "sell_daily_pct": 2.0,
       "sell_profit_pct": 15.0,
       "sell_amount": 500
+    },
+    "short_term": {
+      "stop_loss_pct": -10.0,
+      "sell_profit_pct": 10.0,
+      "sell_shares": 100
     },
     "healthcare": {
       "sell_profit_pct": 10.0,
