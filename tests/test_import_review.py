@@ -46,6 +46,11 @@ def test_import_review_flags_missing_market_value_and_profit_rate():
     assert "缺少市值" in problems
     assert "缺少持有收益率" in problems
 
+    # 缺少市值已降级为提示，不再阻断写入
+    assert blocking_issue_count(issues) == 0
+    mv_issues = [i for i in issues if i["问题"] == "缺少市值"]
+    assert mv_issues[0]["级别"] == "提示"
+
 
 def test_import_review_flags_stock_specific_missing_fields():
     issues = import_review_issues(

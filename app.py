@@ -613,9 +613,15 @@ elif page == "导入持仓":
                 with st.spinner(f"正在识别截图 {idx + 1}..."):
                     recognized = run_ocr(image_bytes)
                 if recognized:
+                    with text_col:
+                        with st.expander(f"截图 {idx + 1} OCR 原始文本", expanded=False):
+                            st.code(recognized, language="text")
                     parsed = parse_ocr_positions(recognized)
                     if not parsed.empty:
                         all_parsed.append(parsed)
+                    else:
+                        with text_col:
+                            st.warning(f"截图 {idx + 1} 识别出文字但未解析出持仓，建议查看上方原始文本手动粘贴到下方表单。")
                 else:
                     st.warning(f"截图 {idx + 1} 未识别到文字。")
 

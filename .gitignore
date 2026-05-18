@@ -26,3 +26,4 @@ video-projects/
 
 # Duplicate local scratch copy; deploy from repository root app.py.
 Quant assistant/
+.gstack/

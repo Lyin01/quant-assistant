@@ -49,7 +49,8 @@ def import_review_issues(
         tag = str(position.get("tag", "")).strip()
 
         if not _has_value(position.get("market_value")) or float(position.get("market_value") or 0) <= 0:
-            issues.append(_issue("错误", name, "缺少市值", "补充 market_value，避免写入空仓位。"))
+            # 降级为提示：截图 OCR 可能漏识别数字，或用户只想更新部分字段（如股数、成本）
+            issues.append(_issue("提示", name, "缺少市值", "补充 market_value 后数据更完整；如只更新其他字段可忽略。"))
 
         if not _has_value(position.get("holding_pnl_pct")):
             issues.append(_issue("提示", name, "缺少持有收益率", "补充 holding_pnl_pct 后建议会更准确。"))

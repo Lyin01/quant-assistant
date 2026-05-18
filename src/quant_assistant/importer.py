@@ -20,6 +20,19 @@ PORTFOLIO_COLUMNS = [
     "last_daily_pct",
 ]
 
+
+def _has_value(value: Any) -> bool:
+    if value is None:
+        return False
+    try:
+        if pd.isna(value):
+            return False
+    except Exception:
+        pass
+    if isinstance(value, str) and not value.strip():
+        return False
+    return True
+
 SUMMARY_COLUMNS = [
     "account_type",
     "total_assets",
@@ -318,10 +331,16 @@ def merge_positions(
         name = existing.get("name", "")
         imp = imported_by_name.get(name)
         if imp:
-            updated = dict(imp)
+            # 以现有数据为底，只覆盖导入数据中非空的字段
+            updated = dict(existing)
+            for field, value in imp.items():
+                if _has_value(value):
+                    updated[field] = value
+            # id/tag/market_proxy 永远以现有为准（除非导入明确指定了有效值）
             for field in ("id", "tag", "market_proxy"):
                 if field in existing and existing[field]:
-                    updated[field] = existing[field]
+                    if not imp.get(field) or imp[field] == "imported":
+                        updated[field] = existing[field]
             merged.append(updated)
             used_names.add(name)
         else:
