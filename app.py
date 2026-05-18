@@ -691,3 +691,4 @@ elif page == "宏观/产业":
     with st.expander("新闻抓取状态"):
         for msg in friendly_source_messages(news_messages):
             st.write(msg)
+
