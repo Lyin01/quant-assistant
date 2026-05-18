@@ -61,17 +61,88 @@ def _default_config_path() -> Path:
     return find_default_file("config.json")
 
 
+def _clean_portfolio(data: dict[str, Any]) -> dict[str, Any]:
+    """Remove corrupted positions and fix common data issues."""
+    for account_key in ("fund", "stock"):
+        account = data.get("accounts", {}).get(account_key, {})
+        positions = account.get("positions", [])
+        cleaned = []
+        for pos in positions:
+            name = str(pos.get("name", "")).strip()
+            if not name:
+                continue
+            # Remove strategy tags accidentally appended to names
+            for suffix in ("·wide_index", "wide_index", "·tactical_ai", "tactical_ai",
+                           "·power_grid", "power_grid", "·military", "military",
+                           "·semiconductor", "semiconductor", "·robot", "robot",
+                           "·overseas", "overseas", "·healthcare", "healthcare",
+                           "·defensive", "defensive", "·core_ai_dca", "core_ai_dca",
+                           "·imported", "imported"):
+                if name.endswith(suffix):
+                    name = name[: -len(suffix)].rstrip("· ").strip()
+                    break
+            pos["name"] = name
+            # Fix negative or zero market_value for fund positions
+            mv = pos.get("market_value")
+            if account_key == "fund" and mv is not None:
+                try:
+                    if float(mv) <= 0:
+                        pos["market_value"] = 0
+                except (TypeError, ValueError):
+                    pass
+            cleaned.append(pos)
+        if cleaned:
+            data["accounts"][account_key]["positions"] = cleaned
+    return data
+
+
+def _seed_portfolio_from_global() -> dict[str, Any]:
+    """Try to load the root portfolio.json as seed for new users."""
+    global_path = find_default_file("portfolio.json")
+    if global_path.exists():
+        with global_path.open("r", encoding="utf-8") as file:
+            return json.load(file)
+    return dict(DEFAULT_PORTFOLIO)
+
+
+def _seed_history_if_empty(user: dict[str, Any], portfolio_data: dict[str, Any]) -> None:
+    """Write an initial history record so the return curve has a starting point."""
+    from quant_assistant.history import record_change, read_history
+
+    history_file = user_history_file(user)
+    existing = read_history(history_file, limit=1)
+    if existing:
+        return
+
+    total_assets = 0.0
+    for account in portfolio_data.get("accounts", {}).values():
+        total_assets += float(account.get("total_assets", 0) or 0)
+
+    if total_assets > 0:
+        record_change(
+            history_file,
+            change_type="initial",
+            account="all",
+            delta={"added": [], "updated": [], "removed": []},
+            summary={"total_assets": total_assets},
+        )
+
+
 def get_or_create_portfolio(user: dict[str, Any]) -> dict[str, Any]:
     directory = _ensure_user_dir(user)
     path = directory / "portfolio.json"
     if path.exists():
         with path.open("r", encoding="utf-8") as file:
-            return json.load(file)
-    # First login: seed with default
-    data = dict(DEFAULT_PORTFOLIO)
-    data["as_of"] = "首次登录，请导入持仓"
+            data = json.load(file)
+        data = _clean_portfolio(data)
+        _seed_history_if_empty(user, data)
+        return data
+    # First login: seed from global portfolio.json if available
+    data = _seed_portfolio_from_global()
+    data["as_of"] = data.get("as_of", "") or "首次登录，请导入持仓"
     with path.open("w", encoding="utf-8") as file:
         json.dump(data, file, ensure_ascii=False, indent=2)
+    _seed_history_if_empty(user, data)
     return data
 
 

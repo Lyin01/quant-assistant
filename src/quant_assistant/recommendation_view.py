@@ -46,19 +46,49 @@ def recommendation_table(recommendations: list[dict[str, str]], data_source: str
     return pd.DataFrame(rows, columns=["动作", "标的", "数量/金额", "数据来源", "原因"])
 
 
+def _clean_display_name(raw: str) -> str:
+    """Strip strategy tags accidentally appended to position names."""
+    name = raw.strip()
+    for suffix in ("·wide_index", "wide_index", "·tactical_ai", "tactical_ai",
+                   "·power_grid", "power_grid", "·military", "military",
+                   "·semiconductor", "semiconductor", "·robot", "robot",
+                   "·overseas", "overseas", "·healthcare", "healthcare",
+                   "·defensive", "defensive", "·core_ai_dca", "core_ai_dca",
+                   "·imported", "imported"):
+        if name.endswith(suffix):
+            name = name[: -len(suffix)].rstrip("· ").strip()
+            break
+    return name or raw
+
+
+TAG_DISPLAY = {
+    "wide_index": "宽基",
+    "tactical_ai": "AI战术",
+    "power_grid": "电网",
+    "military": "军工",
+    "semiconductor": "半导体",
+    "robot": "机器人",
+    "overseas": "海外",
+    "healthcare": "医药",
+    "defensive": "防御",
+    "core_ai_dca": "AI定投",
+    "imported": "未分类",
+}
+
+
 def fund_holdings_table(portfolio: dict[str, Any]) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     account = portfolio.get("accounts", {}).get("fund", {})
     for position in account.get("positions", []):
         rows.append(
             {
-                "基金名称": position.get("name", ""),
+                "基金名称": _clean_display_name(position.get("name", "")),
                 "市值": position.get("market_value"),
                 "当日涨跌%": position.get("last_daily_pct"),
                 "持有收益": position.get("holding_pnl"),
                 "持有收益%": position.get("holding_pnl_pct"),
                 "关联指数": position.get("market_proxy"),
-                "策略": position.get("tag", ""),
+                "策略": TAG_DISPLAY.get(position.get("tag", ""), position.get("tag", "")),
             }
         )
     return pd.DataFrame(
@@ -81,7 +111,7 @@ def stock_holdings_table(portfolio: dict[str, Any]) -> pd.DataFrame:
     for position in account.get("positions", []):
         rows.append(
             {
-                "股票/基金": position.get("name", ""),
+                "股票/基金": _clean_display_name(position.get("name", "")),
                 "市值": position.get("market_value"),
                 "持股": position.get("shares"),
                 "现价": position.get("price"),
@@ -89,7 +119,7 @@ def stock_holdings_table(portfolio: dict[str, Any]) -> pd.DataFrame:
                 "持仓盈亏": position.get("holding_pnl"),
                 "持仓收益%": position.get("holding_pnl_pct"),
                 "关联指数": position.get("market_proxy"),
-                "策略": position.get("tag", ""),
+                "策略": TAG_DISPLAY.get(position.get("tag", ""), position.get("tag", "")),
             }
         )
     return pd.DataFrame(

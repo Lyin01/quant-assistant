@@ -32,15 +32,27 @@ def fetch_history(
     if cached is not None:
         return cached, ["Cache hit"]
 
+    messages: list[str] = []
+
+    # Try EastMoney first (faster, no heavy imports)
+    try:
+        frame = _fetch_eastmoney_history(secid, start, end, adjust)
+        if not frame.empty:
+            messages.append(f"EastMoney history: {secid}, {len(frame)} rows.")
+            save_cached(secid, start_iso, end_iso, adjust, frame)
+            return frame, messages
+    except Exception as exc:
+        messages.append(f"EastMoney history failed for {secid}: {exc}")
+
+    # Fallback to AkShare
     try:
         import akshare as ak
     except Exception as exc:
-        return _eastmoney_history_or_empty(secid, start, end, adjust, [f"AkShare import failed: {exc}"])
+        return _tencent_history_or_empty(secid, start, end, adjust, messages + [f"AkShare import failed: {exc}"])
 
     code = code_from_secid(secid)
     start_text = start.strftime("%Y%m%d")
     end_text = end.strftime("%Y%m%d")
-    messages: list[str] = []
 
     if _is_index_secid(secid):
         symbol = _index_symbol(secid)
@@ -52,7 +64,7 @@ def fetch_history(
                 frame = ak.stock_zh_index_daily(symbol=symbol)
             except Exception as fallback_exc:
                 messages.append(f"AkShare alternate index history failed for {symbol}: {fallback_exc}")
-                return _eastmoney_history_or_empty(secid, start, end, adjust, messages)
+                return _tencent_history_or_empty(secid, start, end, adjust, messages)
             normalized = normalize_history(frame)
             normalized = _filter_dates(normalized, start, end)
             messages.append(f"AkShare alternate index history: {symbol}, {len(normalized)} rows.")
@@ -63,7 +75,7 @@ def fetch_history(
         normalized = _filter_dates(normalized, start, end)
         messages.append(f"AkShare index history: {symbol}, {len(normalized)} rows.")
         if normalized.empty:
-            return _eastmoney_history_or_empty(secid, start, end, adjust, messages)
+            return _tencent_history_or_empty(secid, start, end, adjust, messages)
         save_cached(secid, start_iso, end_iso, adjust, normalized)
         return normalized, messages
 
@@ -77,12 +89,12 @@ def fetch_history(
         )
     except Exception as exc:
         messages.append(f"AkShare ETF history failed for {code}: {exc}")
-        return _eastmoney_history_or_empty(secid, start, end, adjust, messages)
+        return _tencent_history_or_empty(secid, start, end, adjust, messages)
 
     normalized = normalize_history(frame)
     messages.append(f"AkShare ETF history: {code}, {len(normalized)} rows.")
     if normalized.empty:
-        return _eastmoney_history_or_empty(secid, start, end, adjust, messages)
+        return _tencent_history_or_empty(secid, start, end, adjust, messages)
     save_cached(secid, start_iso, end_iso, adjust, normalized)
     return normalized, messages
 
@@ -213,6 +225,16 @@ def _eastmoney_history_or_empty(
         if not frame.empty:
             return frame, messages
 
+    return _tencent_history_or_empty(secid, start, end, adjust, messages)
+
+
+def _tencent_history_or_empty(
+    secid: str,
+    start: date,
+    end: date,
+    adjust: str,
+    messages: list[str],
+) -> tuple[pd.DataFrame, list[str]]:
     try:
         frame = _fetch_tencent_history(secid, start, end, adjust)
     except Exception as exc:

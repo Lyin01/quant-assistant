@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import json
+import time
 import urllib.request
 from typing import Any
 
@@ -141,17 +144,57 @@ def render_user_header() -> None:
             st.rerun()
 
 
+_HMAC_SECRET = None
+
+
+def _get_hmac_secret() -> str:
+    """Get HMAC signing secret from Streamlit secrets or generate a session-level fallback."""
+    global _HMAC_SECRET
+    if _HMAC_SECRET is not None:
+        return _HMAC_SECRET
+    try:
+        _HMAC_SECRET = st.secrets.get("auth_hmac_secret", "")
+    except StreamlitSecretNotFoundError:
+        _HMAC_SECRET = ""
+    if not _HMAC_SECRET:
+        # Session-stable fallback: same secret for the lifetime of this server process
+        _HMAC_SECRET = hashlib.sha256(b"quant-assistant-auth-fallback").hexdigest()[:32]
+    return _HMAC_SECRET
+
+
+def _sign(payload: str) -> str:
+    """HMAC-SHA256 signature of the payload."""
+    return hmac.new(
+        _get_hmac_secret().encode("utf-8"),
+        payload.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
 def _encode_auth(user_info: dict[str, Any]) -> str:
-    """Encode user info as a URL-safe base64 token for query-param persistence."""
-    payload = json.dumps(user_info, ensure_ascii=False)
-    return base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii")
+    """Encode user info with HMAC signature and timestamp for tamper-proof persistence."""
+    envelope = {"user": user_info, "ts": int(time.time())}
+    payload = json.dumps(envelope, ensure_ascii=False, separators=(",", ":"))
+    sig = _sign(payload)
+    token_data = f"{payload}|{sig}"
+    return base64.urlsafe_b64encode(token_data.encode("utf-8")).decode("ascii")
 
 
 def _decode_auth(token: str) -> dict[str, Any] | None:
-    """Decode a query-param auth token back to user info, or None if invalid."""
+    """Decode a signed auth token. Returns None if signature invalid or expired."""
     try:
-        payload = base64.urlsafe_b64decode(token.encode("ascii")).decode("utf-8")
-        return json.loads(payload)
+        raw = base64.urlsafe_b64decode(token.encode("ascii")).decode("utf-8")
+        payload, sig = raw.rsplit("|", 1)
+        expected = _sign(payload)
+        if not hmac.compare_digest(sig, expected):
+            return None
+        envelope = json.loads(payload)
+        user_info = envelope.get("user", {})
+        ts = envelope.get("ts", 0)
+        # Token expires after 30 days
+        if time.time() - ts > 30 * 86400:
+            return None
+        return user_info
     except Exception:
         return None
 

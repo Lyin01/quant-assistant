@@ -125,7 +125,7 @@ def build_asset_distribution(portfolio: dict[str, Any]) -> pd.DataFrame:
                 "healthcare": "医药",
                 "defensive": "防御",
                 "core_ai_dca": "AI定投",
-                "imported": "其他",
+                "imported": "未分类",
             }.get(tag, tag)
             rows.append({
                 "account": account_name,

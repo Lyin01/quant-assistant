@@ -199,7 +199,7 @@ def test_build_asset_distribution():
     dist = build_asset_distribution(portfolio)
     assert len(dist) == 4
     assert set(dist["account"]) == {"支付宝基金", "国信证券"}
-    assert set(dist["tag"]) == {"宽基", "AI战术", "半导体", "其他"}
+    assert set(dist["tag"]) == {"宽基", "AI战术", "半导体", "未分类"}
     assert dist["market_value"].sum() == 8500.0
 
 

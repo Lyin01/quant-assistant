@@ -193,6 +193,36 @@ if page == "总览":
         st.rerun()
     if load_quotes:
         cached_quotes.clear()
+        st.rerun()
+
+    with st.spinner("正在获取行情..."):
+        quotes, quote_messages = cached_quotes(_current_user_id(), json.dumps(config), json.dumps(portfolio))
+
+    quote_freshness = assess_quote_freshness([q.time_text for q in quotes.values() if q.time_text])
+
+    recs = generate_recommendations(config, portfolio, quotes=quotes)
+    data_source = "实时行情" if quotes else "持仓快照"
+    actionable_recs, watchlist_recs = split_recommendations(recs)
+
+    st.subheader("今日操作清单（基于实时行情）" if quotes else "今日操作清单（降级：使用持仓快照）")
+    actions = recommendation_table(actionable_recs, data_source)
+    if actions.empty:
+        st.info("当前没有触发买入、卖出或限价买入动作。")
+    else:
+        st.dataframe(actions, use_container_width=True, hide_index=True)
+        st.download_button(
+            "下载今日清单 CSV",
+            actions.to_csv(index=False).encode("utf-8-sig"),
+            file_name=f"action-list-{date.today().isoformat()}.csv",
+            mime="text/csv",
+        )
+
+    with st.expander(f"观察项（HOLD，共 {len(watchlist_recs)} 条）", expanded=False):
+        watchlist = recommendation_table(watchlist_recs, data_source)
+        if watchlist.empty:
+            st.info("暂无观察项。")
+        else:
+            st.dataframe(watchlist, use_container_width=True, hide_index=True)
 
     fund_holdings = fund_holdings_table(portfolio)
     stock_holdings = stock_holdings_table(portfolio)
@@ -207,11 +237,6 @@ if page == "总览":
         st.info("当前没有股票持仓数据。")
     else:
         st.dataframe(stock_holdings, use_container_width=True, hide_index=True)
-
-    with st.spinner("正在获取行情..."):
-        quotes, quote_messages = cached_quotes(_current_user_id(), json.dumps(config), json.dumps(portfolio))
-
-    quote_freshness = assess_quote_freshness([q.time_text for q in quotes.values() if q.time_text])
 
     with st.expander("行情源状态", expanded=not bool(quotes)):
         st.caption(quote_status(config))
@@ -241,10 +266,6 @@ if page == "总览":
                     f"**{provider}**: 成功率 {rate:.1f}%, 平均延迟 {latency:.0f}ms, 总请求 {total:.0f}"
                 )
 
-    recs = generate_recommendations(config, portfolio, quotes=quotes)
-    data_source = "实时行情" if quotes else "持仓快照"
-    actionable_recs, watchlist_recs = split_recommendations(recs)
-
     st.subheader("今日驾驶舱")
     st.caption("只做复盘、条件检查和人工复核提示，不预测未来涨跌，不自动下单。")
     cockpit_rows = build_daily_cockpit(
@@ -255,26 +276,6 @@ if page == "总览":
         coverage_issue_count=0,
     )
     st.dataframe(pd.DataFrame(cockpit_rows), use_container_width=True, hide_index=True)
-
-    st.subheader("今日操作清单（基于实时行情）" if quotes else "今日操作清单（降级：使用持仓快照）")
-    actions = recommendation_table(actionable_recs, data_source)
-    if actions.empty:
-        st.info("当前没有触发买入、卖出或限价买入动作。")
-    else:
-        st.dataframe(actions, use_container_width=True, hide_index=True)
-        st.download_button(
-            "下载今日清单 CSV",
-            actions.to_csv(index=False).encode("utf-8-sig"),
-            file_name=f"action-list-{date.today().isoformat()}.csv",
-            mime="text/csv",
-        )
-
-    with st.expander(f"观察项（HOLD，共 {len(watchlist_recs)} 条）", expanded=False):
-        watchlist = recommendation_table(watchlist_recs, data_source)
-        if watchlist.empty:
-            st.info("暂无观察项。")
-        else:
-            st.dataframe(watchlist, use_container_width=True, hide_index=True)
 
     with st.expander("完整建议原文"):
         for rec in recs:
@@ -617,13 +618,13 @@ elif page == "宏观/产业":
     with st.spinner("正在获取宏观数据..."):
         macro_data, macro_messages = fetch_macro_indicators()
     if macro_data:
-        mc1, mc2, mc3, mc4 = st.columns(4)
+        mc1, mc2, mc3, mc4 = st.columns([1, 1, 1.3, 1])
         if macro_data.get("cn_10y_bond") is not None:
             mc1.metric("中国10债", f"{macro_data['cn_10y_bond']:.2f}%")
         if macro_data.get("us_10y_bond") is not None:
             mc2.metric("美国10债", f"{macro_data['us_10y_bond']:.2f}%")
         if macro_data.get("cn_us_spread") is not None:
-            mc3.metric("中美利差", f"{macro_data['cn_us_spread']:+.2f}%")
+            mc3.metric("中美利差", f"{macro_data['cn_us_spread']:.2f}%")
         if macro_data.get("usdcny") is not None:
             mc4.metric("美元兑人民币", f"{macro_data['usdcny']:.4f}")
         mc5, mc6, mc7, mc8 = st.columns(4)
