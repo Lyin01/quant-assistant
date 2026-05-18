@@ -3,6 +3,38 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 
 
+def is_trading_day(today: date | None = None) -> bool:
+    """Check if today is a trading day (weekday and not a known Chinese market holiday)."""
+    day = today or date.today()
+    if day.weekday() >= 5:
+        return False
+    # Chinese A-share market holidays — major fixed-date holidays.
+    # Updated for 2026 based on State Council schedule.
+    _HOLIDAYS: set[tuple[int, int]] = {
+        # 元旦 New Year
+        (1, 1),
+        # 清明节 Qingming
+        (4, 6),
+        # 劳动节 Labor Day
+        (5, 1),
+        # 国庆节 National Day
+        (10, 1), (10, 2), (10, 5), (10, 6), (10, 7),
+        # 中秋节 Mid-Autumn
+        (10, 8),
+    }
+    # Lunar New Year (Spring Festival) — approximate for 2026
+    _SPRING_FESTIVAL_2026: set[tuple[int, int]] = {
+        (2, 16), (2, 17), (2, 18), (2, 19), (2, 20), (2, 23), (2, 24),
+    }
+    key = (day.month, day.day)
+    if key in _HOLIDAYS or key in _SPRING_FESTIVAL_2026:
+        return False
+    # 调休工作日 (Make-up workdays that are trading days):
+    # National Day falls on Thu, so the preceding Sat/Sun may be make-up days
+    # These are regular weekdays, so the weekday check already covers them.
+    return True
+
+
 def assess_quote_freshness(time_texts: list[str], today: date | None = None) -> dict[str, object]:
     current_day = today or date.today()
     latest = _latest_datetime(time_texts)

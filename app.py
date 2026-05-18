@@ -32,7 +32,7 @@ from quant_assistant.analytics_panel import (
 )
 from quant_assistant.auth import require_auth
 from quant_assistant.data_source_health import read_health, summarize_by_provider
-from quant_assistant.daily_brief import assess_quote_freshness, build_daily_cockpit, friendly_source_messages
+from quant_assistant.daily_brief import assess_quote_freshness, build_daily_cockpit, friendly_source_messages, is_trading_day
 from quant_assistant.data_provider import build_provider, collect_secids, quote_status
 from quant_assistant.user_data import get_or_create_portfolio, load_config, save_portfolio, user_history_file
 from quant_assistant.importer import parse_ocr_import_text, update_account_from_import
@@ -76,11 +76,10 @@ def _current_user_id() -> str:
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def cached_quotes(user_id: str, config_json: str, portfolio_json: str):
+def cached_quotes(user_id: str, config_json: str, secids_json: str):
     config_data = json.loads(config_json)
-    portfolio_data = json.loads(portfolio_json)
+    secids = json.loads(secids_json)
     provider = build_provider(config_data)
-    secids = collect_secids(config_data, portfolio_data)
     return provider.get_quotes_with_status(secids)
 
 
@@ -96,15 +95,25 @@ def cached_etf_ranking(limit: int) -> tuple[pd.DataFrame, list[str]]:
 
 @st.cache_resource(show_spinner="正在加载 OCR 引擎...")
 def _get_ocr_engine():
-    from rapidocr_onnxruntime import RapidOCR
-    return RapidOCR()
+    try:
+        from rapidocr_onnxruntime import RapidOCR
+        return RapidOCR()
+    except ImportError:
+        st.error(
+            "OCR 引擎未安装。请运行以下命令安装可选依赖：\n\n"
+            "`pip install -r requirements-ocr.txt`"
+        )
+        return None
 
 
 def run_ocr(image_bytes: bytes) -> str:
+    engine = _get_ocr_engine()
+    if engine is None:
+        return ""
+
     import numpy as np
     from PIL import Image
 
-    engine = _get_ocr_engine()
     img = Image.open(BytesIO(image_bytes)).convert("RGB")
     result, _ = engine(np.array(img))
     if not result:
@@ -196,11 +205,14 @@ if page == "总览":
         st.rerun()
 
     with st.spinner("正在获取行情..."):
-        quotes, quote_messages = cached_quotes(_current_user_id(), json.dumps(config), json.dumps(portfolio))
+        secids = collect_secids(config, portfolio)
+        quotes, quote_messages = cached_quotes(_current_user_id(), json.dumps(config), json.dumps(sorted(set(secids))))
 
     quote_freshness = assess_quote_freshness([q.time_text for q in quotes.values() if q.time_text])
 
-    recs = generate_recommendations(config, portfolio, quotes=quotes)
+    health_records = read_health(days=7)
+    health_summary = summarize_by_provider(health_records) if health_records else None
+    recs = generate_recommendations(config, portfolio, quotes=quotes, data_source_health=health_summary, is_trading_day=is_trading_day())
     data_source = "实时行情" if quotes else "持仓快照"
     actionable_recs, watchlist_recs = split_recommendations(recs)
 
@@ -253,7 +265,6 @@ if page == "总览":
             st.write(message)
 
         # Data source health summary
-        health_records = read_health(days=7)
         if health_records:
             st.divider()
             st.caption("数据源健康度（近7天）")
@@ -489,10 +500,28 @@ elif page == "导入持仓":
         else:
             st.dataframe(parsed, use_container_width=True, hide_index=True)
 
-            if st.button("确认写入", type="primary", key="ocr_update_btn"):
-                from quant_assistant.history import compute_delta, record_change
+            from quant_assistant.history import compute_delta
 
-                target_account = portfolio["accounts"][selected_account]
+            target_account = portfolio["accounts"][selected_account]
+            delta = compute_delta(target_account.get("positions", []), parsed_positions)
+
+            diff_parts = []
+            if delta.get("added"):
+                diff_parts.append(f"新增 {len(delta['added'])} 条: {', '.join(delta['added'][:5])}")
+            if delta.get("updated"):
+                diff_parts.append(f"更新 {len(delta['updated'])} 条: {', '.join(delta['updated'][:5])}")
+            if delta.get("removed"):
+                diff_parts.append(f"移除 {len(delta['removed'])} 条: {', '.join(delta['removed'][:5])}")
+
+            if diff_parts:
+                preview_text = " | ".join(diff_parts)
+                st.info(f"写入后将变更：{preview_text}")
+            else:
+                st.info("解析结果与当前持仓一致，无变更。")
+
+            if st.button("确认写入", type="primary", key="ocr_update_btn"):
+                from quant_assistant.history import record_change
+
                 previous_snapshot = dict(target_account)
 
                 updated_account = update_account_from_import(
@@ -505,7 +534,6 @@ elif page == "导入持仓":
                 portfolio["accounts"][selected_account] = updated_account
                 portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-                delta = compute_delta(previous_snapshot.get("positions", []), parsed_positions)
                 account_summary = {
                     "total_assets": updated_account.get("total_assets"),
                     "total_positions": len(merged_positions),

@@ -84,7 +84,7 @@ def dataframe_to_positions(frame: pd.DataFrame) -> list[dict[str, Any]]:
             "id": _position_id(name, index),
             "name": str(name).strip(),
             "tag": _clean(row.get("tag")) or "imported",
-            "_dedup_key": _name_dedup_key(str(name).strip()),
+            "_dedup_key": name_dedup_key(str(name).strip()),
         }
         for column in PORTFOLIO_COLUMNS:
             if column in {"name", "tag"}:
@@ -638,7 +638,12 @@ def _looks_like_price_cost(source: str) -> bool:
 
 def ocr_image(image_bytes: bytes) -> str:
     """Run RapidOCR on raw image bytes, return recognized text as a single string."""
-    from rapidocr_onnxruntime import RapidOCR
+    try:
+        from rapidocr_onnxruntime import RapidOCR
+    except ImportError:
+        raise ImportError(
+            "OCR 依赖未安装。请运行: pip install -r requirements-ocr.txt"
+        )
 
     import numpy as np
     from PIL import Image
@@ -669,13 +674,13 @@ def merge_positions(
 
     for existing in existing_positions:
         name = existing.get("name", "")
-        existing_key = _name_dedup_key(name)
+        existing_key = name_dedup_key(name)
         imp = imported_by_name.get(name)
         if not imp and existing_key:
             for idx, (ikey, ipos) in enumerate(imported_keys):
                 if idx in used_imports:
                     continue
-                if _merge_keys_match(existing_key, ikey):
+                if merge_keys_match(existing_key, ikey):
                     imp = ipos
                     used_imports.add(idx)
                     break
@@ -710,7 +715,7 @@ def merge_positions(
     return merged
 
 
-_FUND_HOUSES_MERGE = (
+FUND_HOUSES = (
     "易方达", "天弘", "大成", "博时", "广发", "华宝", "华夏", "嘉实", "南方",
     "招商", "富国", "鹏华", "工银", "国泰", "汇添富", "景顺", "银华", "中欧",
     "兴全", "诺安", "交银", "建信", "农银", "长城", "万家", "平安", "海富通",
@@ -719,10 +724,10 @@ _FUND_HOUSES_MERGE = (
 )
 
 
-def _name_dedup_key(name: str) -> str:
+def name_dedup_key(name: str) -> str:
     """Normalized key for deduplication (strips fund house prefix + type suffix)."""
     core = name
-    for prefix in _FUND_HOUSES_MERGE:
+    for prefix in FUND_HOUSES:
         if core.startswith(prefix):
             core = core[len(prefix):]
             break
@@ -734,7 +739,7 @@ def _name_dedup_key(name: str) -> str:
     return core.lower()
 
 
-def _merge_keys_match(key_a: str, key_b: str) -> bool:
+def merge_keys_match(key_a: str, key_b: str) -> bool:
     """Check if two dedup keys refer to the same fund (handles OCR truncation)."""
     if key_a == key_b:
         return True

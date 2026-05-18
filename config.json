@@ -62,57 +62,6 @@
       "rebalance_profit_pct": 5.0
     }
   },
-  "strategy_templates": {
-    "tactical_sell": {
-      "description": "止盈模板：涨幅+收益达标则卖出",
-      "conditions": [
-        {"field": "daily_pct", "op": ">=", "value_ref": "sell_daily_pct"},
-        {"field": "holding_pnl_pct", "op": ">=", "value_ref": "sell_profit_pct"}
-      ],
-      "action": {"type": "SELL_MONEY", "amount_ref": "sell_amount"},
-      "reason_template": "{name} 涨幅 {daily_pct:.2f}%，持有收益 {holding_pnl_pct:.2f}%，触发止盈。"
-    },
-    "profit_sell": {
-      "description": "收益止盈",
-      "conditions": [
-        {"field": "holding_pnl_pct", "op": ">=", "value_ref": "sell_profit_pct"}
-      ],
-      "action": {"type": "SELL_MONEY", "amount_ref": "sell_amount"},
-      "reason_template": "{name} 收益 {holding_pnl_pct:.2f}%，止盈。"
-    },
-    "military_sell": {
-      "description": "军工反弹卖出",
-      "conditions": [
-        {"field": "holding_pnl_pct", "op": ">=", "value": 0},
-        {"field": "daily_pct", "op": ">=", "value": 0}
-      ],
-      "action": {"type": "SELL_MONEY", "amount_ref": "sell_amount"},
-      "reason_template": "{name} 已从亏损修复到 {holding_pnl_pct:.2f}%，按规则反弹后降低暴露。"
-    },
-    "limit_buy": {
-      "description": "限价买入",
-      "conditions": [
-        {"field": "price", "op": "<=", "value_ref": "limit_buy_price"}
-      ],
-      "action": {"type": "BUY_SHARES", "amount_ref": "limit_buy_shares"},
-      "reason_template": "{name} 现价 {price:.3f} 小于等于挂单价 {limit_buy_price:.3f}，允许补一手。"
-    },
-    "dca_hold": {
-      "description": "定投仓持有",
-      "conditions": [],
-      "action": {"type": "HOLD"},
-      "reason_template": "{name} 是长期定投仓，不按短线波动处理。"
-    }
-  },
-  "strategy_bindings": {
-    "core_ai_dca": "dca_hold",
-    "tactical_ai": "tactical_sell",
-    "power_grid": "tactical_sell",
-    "military": "military_sell",
-    "overseas": "profit_sell",
-    "healthcare": "profit_sell",
-    "defensive": "profit_sell"
-  },
   "quotes": {
     "market": {
       "上证指数": "1.000001",

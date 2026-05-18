@@ -5,6 +5,8 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from .importer import FUND_HOUSES, name_dedup_key, merge_keys_match
+
 
 ROOT_DATA = Path("data")
 USERS_DIR = ROOT_DATA / "users"
@@ -99,10 +101,10 @@ def _clean_portfolio(data: dict[str, Any]) -> dict[str, Any]:
                 except (TypeError, ValueError):
                     pass
             # Deduplicate: keep the entry with richer data
-            dkey = _dedup_key(name)
+            dkey = name_dedup_key(name)
             matched_idx = None
             for key, idx in seen_keys:
-                if _dedup_keys_match(key, dkey):
+                if namemerge_keys_match(key, dkey):
                     matched_idx = idx
                     break
             if matched_idx is not None:
@@ -128,7 +130,7 @@ def _looks_like_fund_not_stock(name: str) -> bool:
     """
     import re
     # Starts with a fund house prefix → almost certainly a fund
-    for prefix in _FUND_HOUSES:
+    for prefix in FUND_HOUSES:
         if name.startswith(prefix):
             return True
     # Name matches an index pattern without any company context → likely fund holding
@@ -146,23 +148,6 @@ def _richness(pos: dict[str, Any]) -> int:
         if val is not None and val != "" and val != "imported":
             score += 1
     return score
-
-
-def _dedup_keys_match(key_a: str, key_b: str) -> bool:
-    """Check if two dedup keys refer to the same fund.
-
-    Handles OCR truncation where one name may be a prefix of the other.
-    e.g. "中证电网" matches "中证电网设备" (truncated by OCR).
-    """
-    if key_a == key_b:
-        return True
-    if not key_a or not key_b:
-        return False
-    # One is a prefix of the other (OCR truncation)
-    shorter, longer = (key_a, key_b) if len(key_a) <= len(key_b) else (key_b, key_a)
-    if len(longer) - len(shorter) <= 4 and longer.startswith(shorter):
-        return True
-    return False
 
 
 _GARBAGE_NAMES = {
@@ -200,42 +185,10 @@ def _is_garbage_name(name: str) -> bool:
     if name in _GENERIC_FUND_TYPES:
         return True
     # Fund house prefix + truncated = likely garbage from OCR
-    for prefix in _FUND_HOUSES:
+    for prefix in FUND_HOUSES:
         if name.startswith(prefix) and len(name) < len(prefix) + 3:
             return True
     return False
-
-
-_FUND_HOUSES = (
-    "易方达", "天弘", "大成", "博时", "广发", "华宝", "华夏", "嘉实", "南方",
-    "招商", "富国", "鹏华", "工银", "国泰", "汇添富", "景顺", "银华", "中欧",
-    "兴全", "诺安", "交银", "建信", "农银", "长城", "万家", "平安", "海富通",
-    "国联安", "华安", "中银", "信达澳银", "东吴", "长盛", "宝盈", "中海",
-    "金鹰", "泰达宏利", "新华", "信诚", "益民", "银河", "中邮",
-)
-
-
-def _dedup_key(name: str) -> str:
-    """Generate a normalized key for deduplication.
-
-    Strips fund house prefixes and common suffixes to compare the core fund identity.
-    e.g. "天弘中证电网设备" → "中证电网", "中证电网设备" → "中证电网"
-    """
-    import re
-    core = name
-    # Strip known fund house prefixes
-    for prefix in _FUND_HOUSES:
-        if core.startswith(prefix):
-            core = core[len(prefix):]
-            break
-    # Strip common fund type suffixes
-    for suffix in ("ETF联接", "ETF", "联接", "指数", "定投小仓", "定投大仓", "定投", "大仓", "小仓"):
-        if core.endswith(suffix):
-            core = core[:-len(suffix)]
-            break
-    # Remove remaining punctuation and whitespace
-    core = re.sub(r"[\s·、，。\-]", "", core)
-    return core.lower()
 
 
 def _seed_portfolio_from_global() -> dict[str, Any]:
