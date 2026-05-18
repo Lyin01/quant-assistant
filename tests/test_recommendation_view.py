@@ -11,7 +11,7 @@ from quant_assistant.recommendation_view import (
 
 def test_split_recommendations_keeps_actionable_items_first():
     recommendations = [
-        {"action": "HOLD", "instrument": "A", "amount": "-", "reason": "watch"},
+        {"action": "HOLD", "instrument": "A", "amount": "—", "reason": "watch"},
         {"action": "BUY", "instrument": "B", "amount": "100 元", "reason": "buy"},
         {"action": "LIMIT_BUY", "instrument": "C", "amount": "100 股 @ 2.000", "reason": "limit"},
         {"action": "SELL", "instrument": "D", "amount": "500 元", "reason": "sell"},

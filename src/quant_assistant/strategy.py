@@ -317,4 +317,4 @@ def _limit_buy(instrument: str, shares: int, price: float, reason: str) -> Recom
 
 
 def _hold(instrument: str, reason: str) -> Recommendation:
-    return {"action": "HOLD", "instrument": instrument, "amount": "-", "reason": reason}
+    return {"action": "HOLD", "instrument": instrument, "amount": "—", "reason": reason}

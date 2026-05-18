@@ -90,9 +90,9 @@ def build_recommendation(action_type: str, instrument: str, amount: float | int,
     elif action_type == "LIMIT_BUY":
         return {"action": "LIMIT_BUY", "instrument": instrument, "amount": f"{amount} 股", "reason": reason}
     elif action_type == "HOLD":
-        return {"action": "HOLD", "instrument": instrument, "amount": "-", "reason": reason}
+        return {"action": "HOLD", "instrument": instrument, "amount": "—", "reason": reason}
     else:
-        return {"action": "HOLD", "instrument": instrument, "amount": "-", "reason": reason}
+        return {"action": "HOLD", "instrument": instrument, "amount": "—", "reason": reason}
 
 
 def resolve_value(spec: dict[str, Any], config_rules: dict[str, Any] | None) -> Any:

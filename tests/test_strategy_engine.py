@@ -149,7 +149,7 @@ def test_build_recommendation_limit_buy():
 def test_build_recommendation_hold():
     rec = build_recommendation("HOLD", "Test Fund", 0, "Hold reason")
     assert rec["action"] == "HOLD"
-    assert rec["amount"] == "-"
+    assert rec["amount"] == "—"
 
 
 def test_build_recommendation_unknown_type_defaults_to_hold():
