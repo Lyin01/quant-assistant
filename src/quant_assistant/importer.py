@@ -292,6 +292,44 @@ def _infer_tag(name: str) -> str:
     return "imported"
 
 
+_TAG_TO_PROXY: dict[str, str | None] = {
+    "wide_index": "中证500",
+    "tactical_ai": "人工智能",
+    "core_ai_dca": "人工智能",
+    "power_grid": "电网设备",
+    "military": "军工",
+    "semiconductor": "半导体",
+    "robot": "机器人",
+    "overseas": None,   # 需根据持仓名称进一步推断
+    "healthcare": "创新药",
+    "defensive": None,
+    "imported": None,
+}
+
+
+_PROXY_NAME_RULES = [
+    ("纳指", ["纳指", "纳斯达克"]),
+    ("标普500", ["标普", "标普500"]),
+    ("中证500", ["中证500"]),
+    ("人工智能", ["人工智能"]),
+    ("电网设备", ["电网"]),
+    ("军工", ["军工"]),
+    ("半导体", ["半导体", "芯片"]),
+    ("机器人", ["机器人"]),
+    ("创新药", ["创新药", "医药"]),
+]
+
+
+def _infer_market_proxy(name: str, tag: str) -> str | None:
+    """Infer market_proxy from position name and tag."""
+    # First try name-based matching for all tags
+    for proxy, keywords in _PROXY_NAME_RULES:
+        if any(keyword in name for keyword in keywords):
+            return proxy
+    # Fallback to tag-based default
+    return _TAG_TO_PROXY.get(tag)
+
+
 def _looks_like_shares(source: str) -> bool:
     return any(keyword in source for keyword in ["持股", "股", "可卖", "份额", "数量"])
 
@@ -351,6 +389,10 @@ def merge_positions(
         if name not in used_names:
             if not imp.get("tag") or imp["tag"] == "imported":
                 imp["tag"] = _infer_tag(name)
+            if not imp.get("market_proxy"):
+                proxy = _infer_market_proxy(name, imp.get("tag", "imported"))
+                if proxy:
+                    imp["market_proxy"] = proxy
             merged.append(imp)
 
     return merged
@@ -369,7 +411,7 @@ def merge_account_summary(
     return updated
 
 
-def recalc_account_summary(account: dict[str, Any]) -> dict[str, Any]:
+def recalc_account_summary(account: dict[str, Any], account_key: str = "") -> dict[str, Any]:
     """Recalculate account totals from current positions.
 
     Stock: total_assets = sum(market_value) + available_cash
@@ -382,7 +424,7 @@ def recalc_account_summary(account: dict[str, Any]) -> dict[str, Any]:
         for p in positions
     )
 
-    if "available_cash" in updated:
+    if account_key == "stock" or (not account_key and "available_cash" in updated):
         # Stock account
         updated["market_value"] = round(market_value_sum, 2)
         updated["total_assets"] = round(market_value_sum + float(updated.get("available_cash", 0) or 0), 2)

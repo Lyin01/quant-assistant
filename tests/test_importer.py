@@ -1,4 +1,4 @@
-from quant_assistant.importer import _infer_tag, merge_positions, recalc_account_summary
+from quant_assistant.importer import _infer_market_proxy, _infer_tag, merge_positions, recalc_account_summary
 
 
 def test_infer_tag_wide_index():
@@ -92,7 +92,7 @@ def test_recalc_fund_account_summary():
             {"name": "C", "market_value": 0.0},
         ],
     }
-    updated = recalc_account_summary(account)
+    updated = recalc_account_summary(account, "fund")
     assert updated["total_assets"] == 3500.5
 
 
@@ -108,7 +108,7 @@ def test_recalc_stock_account_summary():
             {"name": "沃尔核材", "market_value": 2249.0},
         ],
     }
-    updated = recalc_account_summary(account)
+    updated = recalc_account_summary(account, "stock")
     assert updated["market_value"] == 2452.5
     assert updated["total_assets"] == 4096.78
 
@@ -123,8 +123,43 @@ def test_recalc_account_preserves_existing_fields():
         "available_cash": 1000.0,
         "positions": [{"name": "半导体", "market_value": 500.0}],
     }
-    updated = recalc_account_summary(account)
+    updated = recalc_account_summary(account, "stock")
     assert updated["today_pnl"] == -40.0
     assert updated["holding_pnl"] == -15.22
     assert updated["available_cash"] == 1000.0
     assert updated["total_assets"] == 1500.0
+
+
+def test_recalc_fund_ignores_available_cash():
+    """基金账户即使有 available_cash 字段也不应计入 total_assets。"""
+    account = {
+        "name": "支付宝基金",
+        "total_assets": 0.0,
+        "available_cash": 5000.0,  # 可能被 merge_account_summary 误加入
+        "positions": [
+            {"name": "A", "market_value": 1000.0},
+        ],
+    }
+    updated = recalc_account_summary(account, "fund")
+    assert updated["total_assets"] == 1000.0
+
+
+def test_infer_market_proxy_from_name():
+    assert _infer_market_proxy("易方达中证500", "wide_index") == "中证500"
+    assert _infer_market_proxy("华宝纳斯达克精选", "overseas") == "纳指"
+    assert _infer_market_proxy("博时标普500ETF联接", "overseas") == "标普500"
+    assert _infer_market_proxy("广发中证军工ETF联接", "military") == "军工"
+    assert _infer_market_proxy("天弘中证电网设备", "power_grid") == "电网设备"
+    assert _infer_market_proxy("某个不认识的基金", "imported") is None
+
+
+def test_merge_positions_infers_market_proxy_for_new_holdings():
+    """新持仓应自动推断 market_proxy。"""
+    existing = [{"name": "半导体", "tag": "semiconductor", "market_value": 203.5}]
+    imported = [{"name": "易方达中证500", "tag": "wide_index", "market_value": 5594.65}]
+
+    merged = merge_positions(existing, imported)
+
+    assert len(merged) == 2
+    new_pos = next(p for p in merged if p["name"] == "易方达中证500")
+    assert new_pos["market_proxy"] == "中证500"

@@ -564,7 +564,7 @@ elif page == "导入持仓":
 
             merged = merge_positions(target["positions"], positions)
             target["positions"] = merged
-            target = recalc_account_summary(target)
+            target = recalc_account_summary(target, csv_account_choice)
             portfolio["accounts"][csv_account_choice] = target
             portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
 
@@ -757,7 +757,7 @@ elif page == "导入持仓":
                 else:
                     updated_account = dict(target_account)
                 updated_account["positions"] = merged_positions
-                updated_account = recalc_account_summary(updated_account)
+                updated_account = recalc_account_summary(updated_account, selected_account)
                 portfolio["accounts"][selected_account] = updated_account
                 portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
 
