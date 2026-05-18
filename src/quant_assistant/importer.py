@@ -99,6 +99,13 @@ def dataframe_to_positions(frame: pd.DataFrame) -> list[dict[str, Any]]:
     return positions
 
 
+def parse_ocr_import_text(text: str) -> tuple[pd.DataFrame, dict[str, Any], list[dict[str, Any]]]:
+    parsed = parse_ocr_positions(text)
+    summary = parse_ocr_summary(text)
+    positions = dataframe_to_positions(parsed)
+    return parsed, summary, positions
+
+
 def parse_ocr_positions(text: str) -> pd.DataFrame:
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     rows: list[dict[str, Any]] = []

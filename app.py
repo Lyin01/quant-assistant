@@ -35,17 +35,7 @@ from quant_assistant.data_source_health import read_health, summarize_by_provide
 from quant_assistant.daily_brief import assess_quote_freshness, build_daily_cockpit, friendly_source_messages
 from quant_assistant.data_provider import build_provider, collect_secids, quote_status
 from quant_assistant.user_data import get_or_create_portfolio, load_config, save_portfolio, user_history_file
-from quant_assistant.importer import (
-    _infer_tag,
-    dataframe_to_positions,
-    normalize_import_table,
-    parse_ocr_positions,
-    parse_ocr_summary,
-    read_uploaded_table,
-    template_frame,
-    update_account_from_import,
-)
-from quant_assistant.import_review import blocking_issue_count, detect_target_account, import_review_issues, merge_parsed_frames
+from quant_assistant.importer import parse_ocr_import_text, update_account_from_import
 from quant_assistant.commodity_chain import chain_summary, fetch_chain_prices, list_chains
 from quant_assistant.macro_dashboard import fetch_macro_indicators, macro_summary
 from quant_assistant.market_data import fetch_etf_ranking, fetch_history, instrument_options
@@ -197,52 +187,6 @@ def _title() -> None:
     st.caption("本地半自动复盘助手。只生成建议，不自动真实下单。")
 
 
-def _render_import_issues(issues: list[dict[str, str]]) -> bool:
-    blockers = blocking_issue_count(issues)
-    if not issues:
-        st.success("导入校验未发现明显问题。")
-        return False
-
-    st.dataframe(pd.DataFrame(issues), use_container_width=True, hide_index=True)
-    if blockers:
-        st.error(f"发现 {blockers} 个阻断问题，修正后再确认写入。")
-        return True
-
-    st.info("这些是提示项，不会阻止写入；确认无误后可以继续。")
-    return False
-
-
-def _render_import_rollback(location_key: str) -> None:
-    from quant_assistant.history import read_history, rollback
-
-    history_file = user_history_file(user)
-    history = read_history(history_file, limit=5)
-    with st.expander("撤销最近一次导入", expanded=False):
-        if not history:
-            st.info("暂无可撤销的导入记录。")
-            return
-
-        latest = history[0]
-        account_key = latest.get("account")
-        ts = str(latest.get("timestamp", ""))[:16].replace("T", " ")
-        changes = latest.get("changes", {})
-        st.caption(
-            f"最近记录：{ts} | {latest.get('type', 'unknown')} | "
-            f"新增 {len(changes.get('added', []))} / 更新 {len(changes.get('updated', []))} / "
-            f"移除 {len(changes.get('removed', []))}"
-        )
-        if st.button("撤销最近一次导入", key=f"rollback_import_{location_key}"):
-            restored = rollback(history_file)
-            if restored and account_key in portfolio.get("accounts", {}):
-                portfolio["accounts"][account_key] = restored
-                portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
-                save_portfolio(user, portfolio)
-                reload_portfolio()
-                st.success(f"已恢复 {account_key} 到最近一次导入前。")
-                st.rerun()
-            st.warning("最近记录没有可恢复快照。")
-
-
 page = st.sidebar.radio(
     "功能",
     ["总览", "历史 K 线", "信号 / ETF 排行", "回测", "导入持仓", "分析", "市场扫描", "宏观/产业"],
@@ -252,11 +196,9 @@ page = st.sidebar.radio(
 _title()
 
 if page == "总览":
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2 = st.columns(2)
     col1.metric("基金资产", f'{fund["total_assets"]:,.2f}', f'{fund["today_pnl"]:,.2f}')
     col2.metric("股票资产", f'{stock["total_assets"]:,.2f}', f'{stock["today_pnl"]:,.2f}')
-    col3.metric("股票可用", f'{stock["available_cash"]:,.2f}')
-    col4.metric("计划总子弹", f'{config["cash_plan"]["available_cash_total"]:,.0f}')
 
     st.subheader("行情快照")
     st.caption(quote_status(config))
@@ -498,169 +440,45 @@ elif page == "回测":
                 st.write(message)
 
 elif page == "导入持仓":
-    _render_import_rollback("page")
+    st.subheader("截图 OCR 导入")
 
-    st.subheader("从表格导入持仓")
-    template = template_frame()
-    st.download_button(
-        "下载持仓导入模板 CSV",
-        template.to_csv(index=False).encode("utf-8-sig"),
-        file_name="portfolio-template.csv",
-        mime="text/csv",
-    )
-    table_file = st.file_uploader("上传 CSV / Excel", type=["csv", "xlsx", "xls"])
-    if table_file is not None:
-        raw = read_uploaded_table(table_file.name, table_file.getvalue())
-        st.dataframe(raw, use_container_width=True)
-        mapping = {}
-        st.caption("字段映射。无法识别的列可以留空。")
-        map_cols = st.columns(3)
-        for index, target in enumerate(template.columns):
-            mapping[target] = map_cols[index % 3].selectbox(
-                target,
-                [""] + list(raw.columns),
-                key=f"map_{target}",
-            )
-        normalized = normalize_import_table(raw, mapping)
-        positions = dataframe_to_positions(normalized)
-        st.subheader("标准化结果")
-        st.dataframe(normalized, use_container_width=True, hide_index=True)
-        st.download_button(
-            "下载标准化持仓 JSON",
-            json.dumps(positions, ensure_ascii=False, indent=2).encode("utf-8"),
-            file_name="imported-positions.json",
-            mime="application/json",
-        )
-        st.divider()
-        st.subheader("更新到总览")
-        csv_has_shares = any(p.get("shares") for p in positions)
-        csv_detected = "stock" if csv_has_shares else "fund"
-        csv_account_choice = st.selectbox(
-            "目标账户",
-            ["fund", "stock"],
-            index=0 if csv_detected == "fund" else 1,
-            format_func=lambda x: "支付宝基金 (fund)" if x == "fund" else "国信证券 (stock)",
-            key="csv_account_select",
-        )
-        csv_target = portfolio["accounts"][csv_account_choice]
-        csv_issues = import_review_issues(positions, csv_account_choice, csv_target.get("positions", []))
-        st.caption("写入前校验")
-        csv_blocked = _render_import_issues(csv_issues)
-        if st.button("确认更新持仓", type="primary", key="csv_update_btn", disabled=csv_blocked):
-            from quant_assistant.history import compute_delta, record_change
-
-            target = portfolio["accounts"][csv_account_choice]
-            previous_snapshot = dict(target)
-
-            target = update_account_from_import(target, positions, csv_account_choice)
-            merged = target["positions"]
-            portfolio["accounts"][csv_account_choice] = target
-            portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
-
-            delta = compute_delta(previous_snapshot.get("positions", []), positions)
-            account_summary = {
-                "total_assets": target.get("total_assets"),
-                "total_positions": len(merged),
-            }
-            record_change(
-                user_history_file(user),
-                change_type="csv_import",
-                account=csv_account_choice,
-                delta=delta,
-                summary=account_summary,
-                previous_snapshot=previous_snapshot,
-            )
-
-            save_portfolio(user, portfolio)
-            reload_portfolio()
-            st.success(f"已更新 {csv_account_choice} 持仓，共 {len(merged)} 条。变更已记录到历史。")
-            st.rerun()
-
-    st.subheader("从截图导入")
-
-    import_mode = st.radio(
-        "导入模式",
-        options=["截图识别", "纯文本粘贴"],
-        index=0,
+    account_labels = {"fund": "支付宝基金 (fund)", "stock": "国信证券 (stock)"}
+    selected_account = st.radio(
+        "目标账户",
+        ["fund", "stock"],
         horizontal=True,
-        key="import_mode",
+        format_func=lambda item: account_labels[item],
+        key="ocr_target_account",
     )
 
-    ocr_prefill = ""
+    image_file = st.file_uploader(
+        "上传截图 JPG / PNG",
+        type=["jpg", "jpeg", "png"],
+        key="single_screenshot",
+    )
+    if st.button("识别截图", type="primary", disabled=image_file is None):
+        if image_file is not None:
+            with st.spinner("正在识别截图..."):
+                st.session_state["ocr_text_input"] = run_ocr(image_file.getvalue())
+            for key in ("ocr_import_parsed", "ocr_import_summary", "ocr_import_positions"):
+                st.session_state.pop(key, None)
 
-    if import_mode == "截图识别":
-        image_files = st.file_uploader(
-            "上传截图 JPG / PNG（可多选）",
-            type=["jpg", "jpeg", "png"],
-            accept_multiple_files=True,
-            key="multi_screenshot",
-        )
-        if image_files:
-            all_parsed: list[pd.DataFrame] = []
-            image_col, text_col = st.columns([1, 2])
-            for idx, image_file in enumerate(image_files):
-                with image_col:
-                    st.image(image_file, caption=f"截图 {idx + 1}", width=240)
-                image_bytes = image_file.getvalue()
-                with st.spinner(f"正在识别截图 {idx + 1}..."):
-                    recognized = run_ocr(image_bytes)
-                if recognized:
-                    with text_col:
-                        with st.expander(f"截图 {idx + 1} OCR 原始文本", expanded=False):
-                            st.code(recognized, language="text")
-                    parsed = parse_ocr_positions(recognized)
-                    if not parsed.empty:
-                        all_parsed.append(parsed)
-                    else:
-                        with text_col:
-                            st.warning(f"截图 {idx + 1} 识别出文字但未解析出持仓，建议查看上方原始文本手动粘贴到下方表单。")
-                else:
-                    st.warning(f"截图 {idx + 1} 未识别到文字。")
+    ocr_text = st.text_area(
+        "OCR 文本",
+        key="ocr_text_input",
+        height=260,
+        placeholder="上传截图识别，或直接粘贴手机 OCR 文本。",
+    )
 
-            if all_parsed:
-                merged_parsed = merge_parsed_frames(all_parsed)
-                with text_col:
-                    st.success(f"共识别 {len(merged_parsed)} 条持仓，可编辑后确认。")
-                    edited = st.data_editor(
-                        merged_parsed,
-                        use_container_width=True,
-                        hide_index=True,
-                        key="ocr_editor",
-                    )
-                    # Convert edited DataFrame back to text for the form below
-                    ocr_prefill = "\n".join(
-                        " | ".join(str(v) for v in row if pd.notna(v))
-                        for _, row in edited.iterrows()
-                    )
-            else:
-                st.info("未从截图中识别到有效持仓，请切换到纯文本粘贴模式手动输入。")
-
-    if import_mode == "纯文本粘贴" or ocr_prefill:
-        with st.form("ocr_import_form"):
-            preset = st.selectbox("解析格式", ["股票截图", "基金截图", "通用"], index=0)
-            ocr_text = st.text_area(
-                "截图 OCR 文本（自动识别或手动粘贴）",
-                value=ocr_prefill,
-                height=180,
-                placeholder=(
-                    "股票：半导体 | 203.50 | 100 | 100 | 2.035 | 2.071 | -3.60 | -1.74%\n"
-                    "基金：易方达中证500 | 5594.65 | -1.54% | -76.65 | -1.35%"
-                ),
-            )
-            parse_submitted = st.form_submit_button("解析并预览", type="primary")
-
-        if parse_submitted and ocr_text.strip():
-            parsed = parse_ocr_positions(ocr_text)
-            summary = parse_ocr_summary(f"{preset}\n{ocr_text}")
-            st.session_state["ocr_import_parsed"] = parsed
-            st.session_state["ocr_import_summary"] = summary
-            st.session_state["ocr_import_positions"] = dataframe_to_positions(parsed)
-            st.session_state["ocr_import_preset"] = preset
+    if st.button("解析文本", disabled=not str(ocr_text).strip()):
+        parsed, summary, parsed_positions = parse_ocr_import_text(str(ocr_text))
+        st.session_state["ocr_import_parsed"] = parsed
+        st.session_state["ocr_import_summary"] = summary
+        st.session_state["ocr_import_positions"] = parsed_positions
 
     parsed = st.session_state.get("ocr_import_parsed")
     summary = st.session_state.get("ocr_import_summary")
     parsed_positions = st.session_state.get("ocr_import_positions", [])
-    import_preset = st.session_state.get("ocr_import_preset", "通用")
 
     if parsed is not None:
         if summary:
@@ -669,92 +487,33 @@ elif page == "导入持仓":
                 st.dataframe(summary_frame, use_container_width=True, hide_index=True)
 
         if parsed.empty:
-            st.warning("未识别到持仓行。建议保留：名称、市值、持股、现价、成本、盈亏率。")
+            st.warning("未识别到持仓行。")
         else:
-            st.success(f"已识别 {len(parsed)} 条持仓。")
             st.dataframe(parsed, use_container_width=True, hide_index=True)
 
-            detected_account = detect_target_account(import_preset, summary or {}, parsed_positions)
-            account_labels = {"fund": "支付宝基金 (fund)", "stock": "国信证券 (stock)"}
-            selected_account = st.selectbox(
-                "目标账户",
-                ["fund", "stock"],
-                index=0 if detected_account == "fund" else 1,
-                format_func=lambda x: account_labels[x],
-                key="ocr_target_account",
-            )
+            if st.button("确认写入", type="primary", key="ocr_update_btn"):
+                from quant_assistant.history import compute_delta, record_change
 
-            target_account = portfolio["accounts"][selected_account]
-            existing_names = {p["name"] for p in target_account["positions"]}
-            imported_names = {p["name"] for p in parsed_positions}
-            new_names = imported_names - existing_names
-            update_names = existing_names & imported_names
-
-            # Tag selection for new holdings
-            tag_choices = [
-                "wide_index", "tactical_ai", "power_grid", "military",
-                "semiconductor", "robot", "overseas", "healthcare",
-                "defensive", "core_ai_dca", "imported"
-            ]
-            if new_names:
-                st.subheader("为新持仓选择策略标签")
-                for pos in parsed_positions:
-                    if pos["name"] in new_names:
-                        suggested = _infer_tag(pos["name"])
-                        idx = tag_choices.index(suggested) if suggested in tag_choices else tag_choices.index("imported")
-                        pos["tag"] = st.selectbox(
-                            f"`{pos['name']}` 的策略标签",
-                            tag_choices,
-                            index=idx,
-                            key=f"tag_select_{pos['name']}",
-                        )
-
-            st.divider()
-            st.subheader("变更预览")
-            preview_cols = st.columns(3)
-            with preview_cols[0]:
-                st.metric("新增", len(new_names))
-            with preview_cols[1]:
-                st.metric("更新", len(update_names))
-            with preview_cols[2]:
-                st.metric("保留", len(existing_names - imported_names))
-
-            with st.expander("详细对比", expanded=True):
-                if new_names:
-                    st.write("新增:", ", ".join(new_names))
-                if update_names:
-                    st.write("更新:", ", ".join(update_names))
-                unchanged = existing_names - imported_names
-                if unchanged:
-                    st.write("保留:", ", ".join(unchanged))
-
-            st.caption("写入前校验")
-            ocr_issues = import_review_issues(parsed_positions, selected_account, target_account.get("positions", []))
-            ocr_blocked = _render_import_issues(ocr_issues)
-
-            # History tracking integration
-            from quant_assistant.history import compute_delta, record_change
-
-            if st.button("确认更新持仓", type="primary", key="ocr_update_btn", disabled=ocr_blocked):
-                # Save snapshot before change
+                target_account = portfolio["accounts"][selected_account]
                 previous_snapshot = dict(target_account)
 
-                summary_account = summary.get("account_type") if summary else None
-                import_summary = summary if summary and (summary_account is None or summary_account == selected_account) else None
-                updated_account = update_account_from_import(target_account, parsed_positions, selected_account, import_summary)
+                updated_account = update_account_from_import(
+                    target_account,
+                    parsed_positions,
+                    selected_account,
+                    summary,
+                )
                 merged_positions = updated_account["positions"]
                 portfolio["accounts"][selected_account] = updated_account
                 portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-                # Record change history
                 delta = compute_delta(previous_snapshot.get("positions", []), parsed_positions)
                 account_summary = {
                     "total_assets": updated_account.get("total_assets"),
                     "total_positions": len(merged_positions),
                 }
-                history_file = user_history_file(user)
                 record_change(
-                    history_file,
+                    user_history_file(user),
                     change_type="ocr_import",
                     account=selected_account,
                     delta=delta,
@@ -764,63 +523,10 @@ elif page == "导入持仓":
 
                 save_portfolio(user, portfolio)
                 reload_portfolio()
-                for key in ("ocr_import_parsed", "ocr_import_summary", "ocr_import_positions", "ocr_import_preset", "ocr_editor"):
+                for key in ("ocr_import_parsed", "ocr_import_summary", "ocr_import_positions", "ocr_text_input"):
                     st.session_state.pop(key, None)
-                st.success(f"已更新 {selected_account} 持仓，共 {len(merged_positions)} 条。变更已记录到历史。")
+                st.success(f"已更新 {account_labels[selected_account]}，共 {len(merged_positions)} 条持仓。")
                 st.rerun()
-
-    with st.expander("推荐粘贴格式", expanded=False):
-        st.code(
-            """# 股票截图：国信证券
-总资产: 6245.08
-今日盈亏: -40.00
-持仓盈亏: -15.22
-总市值: 4600.80
-可用: 1644.28
-沃尔核材 | 2249.00 | 100 | 100 | 22.490 | 23.000 | -51.02 | -2.22%
-纳指大成 | 1559.70 | 900 | 900 | 1.733 | 1.725 | +7.60 | +0.49%
-创新药 | 239.40 | 300 | 300 | 0.798 | 0.825 | -8.00 | -3.23%
-半导体 | 203.50 | 100 | 100 | 2.035 | 2.071 | -3.60 | -1.74%
-
-# 基金截图：支付宝
-账户资产: 18118.73
-场内穿透: -228.25
-博时标普500ETF联接 | 109.18 | +0.77% | +9.18 | +9.18%
-华宝纳斯达克精选 | 3145.75 | +0.97% | +269.53 | +9.37%
-易方达中证500 | 5594.65 | -1.54% | -76.65 | -1.35%
-天弘中证人工智能定投小仓 | 459.98 | -2.26% | +59.98 | +14.99%
-天弘中证人工智能大仓 | 1717.05 | -2.26% | +264.36 | +18.20%
-广发中证军工ETF联接 | 1375.92 | -2.35% | -94.17 | -6.41%
-天弘中证电网设备 | 3270.40 | -3.24% | +363.23 | +12.49%""",
-            language="text",
-        )
-
-    with st.form("manual_position"):
-        st.caption("手动录入持仓，提交后直接写入总览。")
-        c1, c2, c3, c4 = st.columns(4)
-        manual_name = c1.text_input("名称")
-        manual_tag = c2.selectbox("类型", ["wide_index", "tactical_ai", "power_grid", "military", "semiconductor", "robot", "overseas", "healthcare", "defensive", "core_ai_dca", "imported"])
-        manual_value = c3.number_input("市值/金额", min_value=0.0, value=0.0)
-        manual_profit_pct = c4.number_input("持有收益率%", value=0.0)
-        manual_account = st.selectbox("目标账户", ["fund", "stock"], format_func=lambda x: "支付宝基金 (fund)" if x == "fund" else "国信证券 (stock)")
-        submitted = st.form_submit_button("添加到持仓", type="primary")
-        if submitted and manual_name:
-            new_position = {
-                "id": f"manual_{manual_name}",
-                "name": manual_name,
-                "tag": manual_tag,
-                "market_value": manual_value,
-                "holding_pnl_pct": manual_profit_pct,
-            }
-            target = portfolio["accounts"][manual_account]
-            target = update_account_from_import(target, [new_position], manual_account)
-            merged = target["positions"]
-            portfolio["accounts"][manual_account] = target
-            portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
-            save_portfolio(user, portfolio)
-            reload_portfolio()
-            st.success(f"已添加 {manual_name} 到 {manual_account}，共 {len(merged)} 条持仓。")
-            st.rerun()
 
 elif page == "分析":
     st.subheader("资产分布")

@@ -2,6 +2,7 @@ from quant_assistant.importer import (
     _infer_market_proxy,
     _infer_tag,
     merge_positions,
+    parse_ocr_import_text,
     recalc_account_summary,
     update_account_from_import,
 )
@@ -211,3 +212,41 @@ def test_update_account_from_import_recalculates_when_summary_is_missing():
 
     assert updated["market_value"] == 2452.5
     assert updated["total_assets"] == 3452.5
+
+
+def test_parse_ocr_import_text_keeps_account_summary_separate_from_positions():
+    text = """
+    基金资产: 17869.32
+    当日收益: 126.19
+    示例基金 | 126.19 | +0.10% | +1.00 | +0.80%
+    """
+
+    parsed, summary, positions = parse_ocr_import_text(text)
+
+    assert summary["total_assets"] == 17869.32
+    assert summary["today_pnl"] == 126.19
+    assert parsed.loc[0, "market_value"] == 126.19
+    assert positions[0]["name"] == "示例基金"
+
+
+def test_update_account_from_import_stock_uses_summary_total_not_mixed_position_sum():
+    account = {
+        "name": "国信证券",
+        "total_assets": 0.0,
+        "available_cash": 0.0,
+        "positions": [],
+    }
+    imported = [
+        {"name": "股票A", "tag": "imported", "market_value": 21381.99},
+    ]
+    summary = {
+        "total_assets": 9703.93,
+        "market_value": 9000.00,
+        "available_cash": 703.93,
+    }
+
+    updated = update_account_from_import(account, imported, "stock", summary)
+
+    assert updated["total_assets"] == 9703.93
+    assert updated["market_value"] == 9000.00
+    assert updated["available_cash"] == 703.93
