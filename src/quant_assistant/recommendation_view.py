@@ -46,41 +46,64 @@ def recommendation_table(recommendations: list[dict[str, str]], data_source: str
     return pd.DataFrame(rows, columns=["动作", "标的", "数量/金额", "数据来源", "原因"])
 
 
-def portfolio_holdings_table(portfolio: dict[str, Any]) -> pd.DataFrame:
-    account_labels = {"fund": "支付宝基金", "stock": "国信证券"}
+def fund_holdings_table(portfolio: dict[str, Any]) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
-    for account_key in ("fund", "stock"):
-        account = portfolio.get("accounts", {}).get(account_key, {})
-        for position in account.get("positions", []):
-            rows.append(
-                {
-                    "账户": account_labels.get(account_key, account_key),
-                    "标的": position.get("name", ""),
-                    "策略标签": position.get("tag", ""),
-                    "市值": position.get("market_value"),
-                    "持仓盈亏": position.get("holding_pnl"),
-                    "持仓收益%": position.get("holding_pnl_pct"),
-                    "持股": position.get("shares"),
-                    "现价": position.get("price"),
-                    "成本": position.get("cost"),
-                    "行情代理": position.get("market_proxy"),
-                    "快照涨跌%": position.get("last_daily_pct"),
-                }
-            )
+    account = portfolio.get("accounts", {}).get("fund", {})
+    for position in account.get("positions", []):
+        rows.append(
+            {
+                "基金名称": position.get("name", ""),
+                "市值": position.get("market_value"),
+                "当日涨跌%": position.get("last_daily_pct"),
+                "持有收益": position.get("holding_pnl"),
+                "持有收益%": position.get("holding_pnl_pct"),
+                "关联指数": position.get("market_proxy"),
+                "策略": position.get("tag", ""),
+            }
+        )
     return pd.DataFrame(
         rows,
         columns=[
-            "账户",
-            "标的",
-            "策略标签",
+            "基金名称",
             "市值",
-            "持仓盈亏",
-            "持仓收益%",
+            "当日涨跌%",
+            "持有收益",
+            "持有收益%",
+            "关联指数",
+            "策略",
+        ],
+    )
+
+
+def stock_holdings_table(portfolio: dict[str, Any]) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    account = portfolio.get("accounts", {}).get("stock", {})
+    for position in account.get("positions", []):
+        rows.append(
+            {
+                "股票/基金": position.get("name", ""),
+                "市值": position.get("market_value"),
+                "持股": position.get("shares"),
+                "现价": position.get("price"),
+                "成本": position.get("cost"),
+                "持仓盈亏": position.get("holding_pnl"),
+                "持仓收益%": position.get("holding_pnl_pct"),
+                "关联指数": position.get("market_proxy"),
+                "策略": position.get("tag", ""),
+            }
+        )
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "股票/基金",
+            "市值",
             "持股",
             "现价",
             "成本",
-            "行情代理",
-            "快照涨跌%",
+            "持仓盈亏",
+            "持仓收益%",
+            "关联指数",
+            "策略",
         ],
     )
 

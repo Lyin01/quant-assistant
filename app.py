@@ -41,7 +41,7 @@ from quant_assistant.macro_dashboard import fetch_macro_indicators, macro_summar
 from quant_assistant.market_data import fetch_etf_ranking, fetch_history, instrument_options
 from quant_assistant.market_scanner import DEFAULT_SCAN_LIMIT, scan_etfs
 from quant_assistant.policy_radar import fetch_policy_news, summarize_policy_trends
-from quant_assistant.recommendation_view import portfolio_holdings_table, recommendation_table, split_recommendations
+from quant_assistant.recommendation_view import fund_holdings_table, recommendation_table, split_recommendations, stock_holdings_table
 from quant_assistant.schema import blocking_issue_count as schema_blocking_issue_count, validate_app_data
 from quant_assistant.strategy import generate_recommendations
 
@@ -194,11 +194,19 @@ if page == "总览":
     if load_quotes:
         cached_quotes.clear()
 
-    holdings = portfolio_holdings_table(portfolio)
-    if holdings.empty:
-        st.info("当前没有持仓数据。")
+    fund_holdings = fund_holdings_table(portfolio)
+    stock_holdings = stock_holdings_table(portfolio)
+    st.markdown("##### 基金持仓")
+    if fund_holdings.empty:
+        st.info("当前没有基金持仓数据。")
     else:
-        st.dataframe(holdings, use_container_width=True, hide_index=True)
+        st.dataframe(fund_holdings, use_container_width=True, hide_index=True)
+
+    st.markdown("##### 股票持仓")
+    if stock_holdings.empty:
+        st.info("当前没有股票持仓数据。")
+    else:
+        st.dataframe(stock_holdings, use_container_width=True, hide_index=True)
 
     with st.spinner("正在获取行情..."):
         quotes, quote_messages = cached_quotes(_current_user_id(), json.dumps(config), json.dumps(portfolio))

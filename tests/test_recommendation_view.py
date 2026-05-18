@@ -1,10 +1,11 @@
 import pandas as pd
 
 from quant_assistant.recommendation_view import (
-    portfolio_holdings_table,
+    fund_holdings_table,
     recommendation_table,
     split_recommendations,
     strategy_coverage_issues,
+    stock_holdings_table,
 )
 
 
@@ -35,7 +36,7 @@ def test_recommendation_table_includes_data_source():
     assert frame.loc[0, "标的"] == "半导体"
 
 
-def test_portfolio_holdings_table_flattens_accounts():
+def test_fund_holdings_table_uses_fund_specific_columns():
     portfolio = {
         "accounts": {
             "fund": {
@@ -51,6 +52,28 @@ def test_portfolio_holdings_table_flattens_accounts():
                     }
                 ]
             },
+        }
+    }
+
+    frame = fund_holdings_table(portfolio)
+
+    assert list(frame.columns) == [
+        "基金名称",
+        "市值",
+        "当日涨跌%",
+        "持有收益",
+        "持有收益%",
+        "关联指数",
+        "策略",
+    ]
+    assert frame.loc[0, "基金名称"] == "易方达中证500"
+    assert frame.loc[0, "当日涨跌%"] == 0.22
+    assert frame.loc[0, "关联指数"] == "中证500"
+
+
+def test_stock_holdings_table_uses_stock_specific_columns():
+    portfolio = {
+        "accounts": {
             "stock": {
                 "positions": [
                     {
@@ -69,25 +92,22 @@ def test_portfolio_holdings_table_flattens_accounts():
         }
     }
 
-    frame = portfolio_holdings_table(portfolio)
+    frame = stock_holdings_table(portfolio)
 
     assert list(frame.columns) == [
-        "账户",
-        "标的",
-        "策略标签",
+        "股票/基金",
         "市值",
-        "持仓盈亏",
-        "持仓收益%",
         "持股",
         "现价",
         "成本",
-        "行情代理",
-        "快照涨跌%",
+        "持仓盈亏",
+        "持仓收益%",
+        "关联指数",
+        "策略",
     ]
-    assert frame.loc[0, "账户"] == "支付宝基金"
-    assert frame.loc[0, "标的"] == "易方达中证500"
-    assert frame.loc[1, "账户"] == "国信证券"
-    assert frame.loc[1, "持股"] == 100
+    assert frame.loc[0, "股票/基金"] == "半导体"
+    assert frame.loc[0, "持股"] == 100
+    assert frame.loc[0, "关联指数"] == "半导体"
 
 
 def test_strategy_coverage_ignores_imported_tag():
