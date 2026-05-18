@@ -104,7 +104,7 @@ def _clean_portfolio(data: dict[str, Any]) -> dict[str, Any]:
             dkey = name_dedup_key(name)
             matched_idx = None
             for key, idx in seen_keys:
-                if namemerge_keys_match(key, dkey):
+                if merge_keys_match(key, dkey):
                     matched_idx = idx
                     break
             if matched_idx is not None:
