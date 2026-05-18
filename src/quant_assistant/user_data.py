@@ -86,6 +86,9 @@ def _clean_portfolio(data: dict[str, Any]) -> dict[str, Any]:
             # Filter garbage names
             if _is_garbage_name(name):
                 continue
+            # In stock account, filter out fund-like entries that don't belong
+            if account_key == "stock" and _looks_like_fund_not_stock(name):
+                continue
             pos["name"] = name
             # Fix negative or zero market_value for fund positions
             mv = pos.get("market_value")
@@ -114,6 +117,24 @@ def _clean_portfolio(data: dict[str, Any]) -> dict[str, Any]:
         if deduped:
             data["accounts"][account_key]["positions"] = deduped
     return data
+
+
+def _looks_like_fund_not_stock(name: str) -> bool:
+    """Check if a name looks like a fund/index product rather than an individual stock.
+
+    Stock names are typically 2-4 Chinese characters (公司名) or short ETF names.
+    Fund names start with a fund house prefix (易方达, 天弘, etc.) or contain
+    index keywords combined with a fund house prefix.
+    """
+    import re
+    # Starts with a fund house prefix → almost certainly a fund
+    for prefix in _FUND_HOUSES:
+        if name.startswith(prefix):
+            return True
+    # Name matches an index pattern without any company context → likely fund holding
+    if re.match(r"^(中证|沪深|科创|标普|纳斯达克|纳指|道琼斯)\S{0,6}$", name):
+        return True
+    return False
 
 
 def _richness(pos: dict[str, Any]) -> int:
@@ -150,8 +171,14 @@ _GARBAGE_NAMES = {
 }
 
 
+_GENERIC_FUND_TYPES = {
+    "混债", "纯债", "短债", "货基", "货币", "指数", "增强", "联接",
+}
+
+
 def _is_garbage_name(name: str) -> bool:
     """Check if a position name is obviously garbage/corrupted."""
+    import re
     if len(name) < 2:
         return True
     if name in _GARBAGE_NAMES:
@@ -160,9 +187,22 @@ def _is_garbage_name(name: str) -> bool:
     if len(name) <= 2 and name.isascii() and not any(c.isdigit() for c in name):
         return True
     # Names that are just numbers or punctuation
-    import re
     if re.fullmatch(r"[\d\s.,;:!?%+\-*/=()]+", name):
         return True
+    # Truncated OCR names ending with ellipsis or trailing punctuation
+    if re.search(r"[……]{1,2}$", name) or re.search(r"\.{2,}$", name):
+        return True
+    # Single Chinese character names (except valid stock codes like "中兴")
+    cjk_chars = re.findall(r"[一-鿿]", name)
+    if len(cjk_chars) == 1 and len(name) <= 3:
+        return True
+    # Generic fund type keywords used alone (not a real position name)
+    if name in _GENERIC_FUND_TYPES:
+        return True
+    # Fund house prefix + truncated = likely garbage from OCR
+    for prefix in _FUND_HOUSES:
+        if name.startswith(prefix) and len(name) < len(prefix) + 3:
+            return True
     return False
 
 
