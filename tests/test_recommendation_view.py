@@ -34,7 +34,8 @@ def test_recommendation_table_includes_data_source():
     assert frame.loc[0, "标的"] == "半导体"
 
 
-def test_strategy_coverage_flags_imported_holding():
+def test_strategy_coverage_ignores_imported_tag():
+    """imported 是有意为之的未分类占位符，不应触发策略覆盖提示。"""
     config = {
         "rules": {"semiconductor": {}},
         "strategy_bindings": {},
@@ -52,9 +53,7 @@ def test_strategy_coverage_flags_imported_holding():
 
     issues = strategy_coverage_issues(config, portfolio)
 
-    assert len(issues) == 1
-    assert issues[0]["标的"] == "沃尔核材"
-    assert issues[0]["问题"] == "缺少策略标签"
+    assert len(issues) == 0
 
 
 def test_strategy_coverage_flags_missing_market_proxy_for_live_rule():

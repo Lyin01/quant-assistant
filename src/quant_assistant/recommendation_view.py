@@ -62,7 +62,7 @@ def strategy_coverage_issues(config: dict[str, Any], portfolio: dict[str, Any]) 
             tag = str(position.get("tag", "")).strip()
             proxy_name = position.get("market_proxy")
 
-            if not tag or tag == "imported":
+            if not tag:
                 issues.append(
                     _issue(
                         account_label,
@@ -71,6 +71,10 @@ def strategy_coverage_issues(config: dict[str, Any], portfolio: dict[str, Any]) 
                         "选择合适的 tag，或确认它只作为观察仓位。",
                     )
                 )
+                continue
+
+            # imported 是有意为之的未分类占位符，不再提示为问题
+            if tag == "imported":
                 continue
 
             if tag not in known_tags:

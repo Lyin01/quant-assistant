@@ -41,6 +41,7 @@ from quant_assistant.importer import (
     merge_account_summary,
     merge_positions,
     normalize_import_table,
+    recalc_account_summary,
     parse_ocr_positions,
     parse_ocr_summary,
     read_uploaded_table,
@@ -563,6 +564,8 @@ elif page == "导入持仓":
 
             merged = merge_positions(target["positions"], positions)
             target["positions"] = merged
+            target = recalc_account_summary(target)
+            portfolio["accounts"][csv_account_choice] = target
             portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
 
             delta = compute_delta(previous_snapshot.get("positions", []), positions)
@@ -754,6 +757,7 @@ elif page == "导入持仓":
                 else:
                     updated_account = dict(target_account)
                 updated_account["positions"] = merged_positions
+                updated_account = recalc_account_summary(updated_account)
                 portfolio["accounts"][selected_account] = updated_account
                 portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
 

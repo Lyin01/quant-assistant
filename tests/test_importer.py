@@ -1,4 +1,4 @@
-from quant_assistant.importer import _infer_tag, merge_positions
+from quant_assistant.importer import _infer_tag, merge_positions, recalc_account_summary
 
 
 def test_infer_tag_wide_index():
@@ -79,3 +79,52 @@ def test_merge_positions_uses_import_value_when_present():
     assert len(merged) == 1
     assert merged[0]["market_value"] == 250.0
     assert merged[0]["shares"] == 150
+
+
+def test_recalc_fund_account_summary():
+    """基金账户：total_assets = 各持仓市值之和。"""
+    account = {
+        "name": "支付宝基金",
+        "total_assets": 0.0,
+        "positions": [
+            {"name": "A", "market_value": 1000.0},
+            {"name": "B", "market_value": 2500.5},
+            {"name": "C", "market_value": 0.0},
+        ],
+    }
+    updated = recalc_account_summary(account)
+    assert updated["total_assets"] == 3500.5
+
+
+def test_recalc_stock_account_summary():
+    """股票账户：total_assets = 持仓市值之和 + available_cash。"""
+    account = {
+        "name": "国信证券",
+        "total_assets": 0.0,
+        "market_value": 0.0,
+        "available_cash": 1644.28,
+        "positions": [
+            {"name": "半导体", "market_value": 203.5},
+            {"name": "沃尔核材", "market_value": 2249.0},
+        ],
+    }
+    updated = recalc_account_summary(account)
+    assert updated["market_value"] == 2452.5
+    assert updated["total_assets"] == 4096.78
+
+
+def test_recalc_account_preserves_existing_fields():
+    """重新计算时保留原有非计算字段。"""
+    account = {
+        "name": "国信证券",
+        "total_assets": 9999.0,
+        "today_pnl": -40.0,
+        "holding_pnl": -15.22,
+        "available_cash": 1000.0,
+        "positions": [{"name": "半导体", "market_value": 500.0}],
+    }
+    updated = recalc_account_summary(account)
+    assert updated["today_pnl"] == -40.0
+    assert updated["holding_pnl"] == -15.22
+    assert updated["available_cash"] == 1000.0
+    assert updated["total_assets"] == 1500.0

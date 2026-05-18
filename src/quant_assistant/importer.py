@@ -367,3 +367,27 @@ def merge_account_summary(
         if value is not None:
             updated[summary_key] = value
     return updated
+
+
+def recalc_account_summary(account: dict[str, Any]) -> dict[str, Any]:
+    """Recalculate account totals from current positions.
+
+    Stock: total_assets = sum(market_value) + available_cash
+    Fund:  total_assets = sum(market_value)
+    """
+    updated = dict(account)
+    positions = updated.get("positions", [])
+    market_value_sum = sum(
+        float(p.get("market_value", 0) or 0)
+        for p in positions
+    )
+
+    if "available_cash" in updated:
+        # Stock account
+        updated["market_value"] = round(market_value_sum, 2)
+        updated["total_assets"] = round(market_value_sum + float(updated.get("available_cash", 0) or 0), 2)
+    else:
+        # Fund account
+        updated["total_assets"] = round(market_value_sum, 2)
+
+    return updated
