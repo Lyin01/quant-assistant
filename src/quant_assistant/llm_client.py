@@ -3,13 +3,20 @@ from __future__ import annotations
 import json
 import os
 import urllib.request
+from pathlib import Path
 from typing import Any
 
 
 def _load_env():
     try:
         from dotenv import load_dotenv
-        load_dotenv()
+        # Load from project root first, then current working directory
+        project_root = Path(__file__).resolve().parent.parent.parent
+        env_path = project_root / ".env"
+        if env_path.exists():
+            load_dotenv(dotenv_path=str(env_path))
+        else:
+            load_dotenv()
     except Exception:
         pass
 
