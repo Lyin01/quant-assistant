@@ -14,9 +14,9 @@ def _load_env():
         project_root = Path(__file__).resolve().parent.parent.parent
         env_path = project_root / ".env"
         if env_path.exists():
-            load_dotenv(dotenv_path=str(env_path))
+            load_dotenv(dotenv_path=str(env_path), override=True)
         else:
-            load_dotenv()
+            load_dotenv(override=True)
     except Exception:
         pass
 
@@ -29,12 +29,16 @@ def _get_config():
         api_key = st.secrets.get("DEEPSEEK_API_KEY", "")
         base_url = st.secrets.get("DEEPSEEK_BASE_URL", "")
         model = st.secrets.get("DEEPSEEK_MODEL", "")
+        # Only use st.secrets if the key is actually set (non-empty)
         if api_key:
             return {
                 "api_key": api_key,
                 "base_url": base_url or os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
                 "model": model or os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
             }
+        # st.secrets has the key but it's empty - reload .env and use env var
+        # (streamlit clears env vars when accessing empty secrets)
+        _load_env()
     except Exception:
         pass
     return {
