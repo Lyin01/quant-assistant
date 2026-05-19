@@ -302,6 +302,32 @@ if page == "总览":
         st.text_area("LLM Prompt（可复制到 Kimi/DeepSeek）", prompt, height=300)
         st.caption("提示：当前未接入自动 LLM 调用。复制上方 prompt 到 Kimi/DeepSeek 即可获取自然语言建议。")
 
+    # Multi-Agent Pipeline Panel
+    with st.expander("多 Agent 分析管道", expanded=False):
+        from quant_assistant.multi_agent import run_pipeline
+
+        if st.button("运行多 Agent 分析", key="run_multi_agent"):
+            with st.spinner("Agent 分析中..."):
+                pipe_result = run_pipeline(config, portfolio, quotes=quotes, scan_top_n=10)
+
+            cols = st.columns(4)
+            agent_reports = [
+                ("数据", pipe_result.data_report),
+                ("分析", pipe_result.analysis_report),
+                ("决策", pipe_result.decision_report),
+                ("风控", pipe_result.risk_report),
+            ]
+            for col, (label, report) in zip(cols, agent_reports):
+                with col:
+                    icon = "✅" if report.status == "ok" else "⚠️" if report.status == "warn" else "❌"
+                    st.write(f"**{icon} {label}Agent**")
+                    for finding in report.findings[:5]:
+                        st.caption(finding)
+
+            st.divider()
+            st.subheader("综合摘要")
+            st.info(pipe_result.final_summary)
+
     # Change history panel
     with st.expander("持仓变更记录"):
         from quant_assistant.history import read_history, rollback
