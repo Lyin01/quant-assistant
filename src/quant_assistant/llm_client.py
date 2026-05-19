@@ -23,6 +23,20 @@ def _load_env():
 
 def _get_config():
     _load_env()
+    # Streamlit Cloud stores secrets in st.secrets; fallback to env vars
+    try:
+        import streamlit as st
+        api_key = st.secrets.get("DEEPSEEK_API_KEY", "")
+        base_url = st.secrets.get("DEEPSEEK_BASE_URL", "")
+        model = st.secrets.get("DEEPSEEK_MODEL", "")
+        if api_key:
+            return {
+                "api_key": api_key,
+                "base_url": base_url or os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+                "model": model or os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
+            }
+    except Exception:
+        pass
     return {
         "api_key": os.getenv("DEEPSEEK_API_KEY", ""),
         "base_url": os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
