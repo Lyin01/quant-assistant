@@ -293,6 +293,15 @@ if page == "总览":
             st.write(f'**{rec["action"]}** `{rec["instrument"]}` `{rec["amount"]}`')
             st.caption(rec["reason"])
 
+    # LLM Advisor Panel
+    with st.expander("LLM 智能建议", expanded=True):
+        from quant_assistant.llm_advisor import build_llm_context, generate_llm_prompt
+
+        llm_ctx = build_llm_context(portfolio, recs, quotes=quotes)
+        prompt = generate_llm_prompt(llm_ctx)
+        st.text_area("LLM Prompt（可复制到 Kimi/DeepSeek）", prompt, height=300)
+        st.caption("提示：当前未接入自动 LLM 调用。复制上方 prompt 到 Kimi/DeepSeek 即可获取自然语言建议。")
+
     # Change history panel
     with st.expander("持仓变更记录"):
         from quant_assistant.history import read_history, rollback
