@@ -150,6 +150,25 @@ def generate_llm_prompt(ctx: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def generate_advice(ctx: dict[str, Any]) -> dict[str, Any]:
+    """Generate LLM advice, either via API or fallback to prompt-only.
+
+    Returns {"mode": "api", "text": "...", "usage": {...}} or
+            {"mode": "prompt", "text": "(未配置API)", "prompt": "..."}
+    """
+    from .llm_client import call_llm, is_configured
+
+    prompt = generate_llm_prompt(ctx)
+
+    if is_configured():
+        result = call_llm(prompt)
+        if result["ok"]:
+            return {"mode": "api", "text": result["text"], "usage": result.get("usage", {})}
+        return {"mode": "api_error", "text": f"API 调用失败: {result['error']}", "prompt": prompt}
+
+    return {"mode": "prompt", "text": "(未配置 DeepSeek API Key，请复制下方 prompt 到 Kimi/DeepSeek 获取建议)", "prompt": prompt}
+
+
 def parse_llm_response(text: str) -> dict[str, Any]:
     """Parse LLM response into structured sections.
 

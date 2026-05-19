@@ -1,29 +1,48 @@
+# Environment
+.env
+
+# Python
 __pycache__/
 *.py[cod]
-.venv/
-venv/
+*$py.class
+*.so
+.Python
 env/
-.streamlit/secrets.toml
-.streamlit/*.log
-.pytest_cache/
-.codex-run/
-.claude/settings.local.json
-.worktrees/
-data/
-data_source_health.jsonl
-$null
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# Local non-deploy artifacts kept in this workspace.
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+data/users/
+reports/
+*.log
+streamlit_test.log
+debug_screenshot.png
+
+# Archives
 archive/
-agent-trials/
-codex-clawbot-bridge/
-cc-connect-codex-workspace/
-depcheck-grade-fixture*/
-portfolio-app/
-video-projects/
-*.mp4
-=1.3
-
-# Duplicate local scratch copy; deploy from repository root app.py.
-Quant assistant/
-.gstack/
