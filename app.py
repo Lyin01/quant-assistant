@@ -328,6 +328,22 @@ if page == "总览":
             st.subheader("综合摘要")
             st.info(pipe_result.final_summary)
 
+    # Daily Report Panel
+    with st.expander("每日复盘报告", expanded=False):
+        from quant_assistant.daily_report import generate_daily_report, render_report_markdown
+
+        if st.button("生成今日复盘报告", key="gen_daily_report"):
+            with st.spinner("生成报告中..."):
+                report = generate_daily_report(config, portfolio, quotes=quotes, scan_top_n=10)
+                md = render_report_markdown(report)
+            st.markdown(md)
+            st.download_button(
+                "下载 Markdown 报告",
+                md.encode("utf-8"),
+                file_name=f"report_{date.today().isoformat()}.md",
+                mime="text/markdown",
+            )
+
     # Change history panel
     with st.expander("持仓变更记录"):
         from quant_assistant.history import read_history, rollback
