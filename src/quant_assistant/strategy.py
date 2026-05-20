@@ -7,6 +7,11 @@ from .data_provider import Quote, quote_for_proxy
 
 Recommendation = dict[str, str]
 
+LIVE_DECISION_TAGS_BY_ACCOUNT: dict[str, set[str]] = {
+    "fund": {"wide_index", "tactical_ai", "power_grid", "military", "overseas"},
+    "stock": {"semiconductor", "robot"},
+}
+
 
 def generate_recommendations(
     config: dict[str, Any],
@@ -22,6 +27,40 @@ def generate_recommendations(
     recommendations.extend(_fund_recommendations(config, portfolio, quotes))
     recommendations.extend(_stock_recommendations(config, portfolio, quotes))
     return recommendations
+
+
+def position_strategy_tag(
+    config: dict[str, Any],
+    position: dict[str, Any],
+    account_key: str,
+) -> str:
+    """Resolve the effective strategy tag for a position.
+
+    Stock-account holdings sometimes land as ``imported`` after OCR import even
+    though the project already has a generic short-term stock rule. When the
+    position looks like an A-share stock lot, reuse that rule instead of
+    surfacing it as permanently uncovered.
+    """
+    tag = str(position.get("tag", "")).strip()
+    if tag != "imported":
+        return tag
+    if account_key != "stock":
+        return tag
+    if "short_term" not in config.get("rules", {}):
+        return tag
+
+    shares = int(position.get("shares", 0) or 0)
+    price = float(position.get("price", 0) or 0)
+    cost = float(position.get("cost", 0) or 0)
+    if shares <= 0:
+        return tag
+    if price <= 0 and cost <= 0:
+        return tag
+    return "short_term"
+
+
+def strategy_requires_live_quote(tag: str, account_key: str) -> bool:
+    return tag in LIVE_DECISION_TAGS_BY_ACCOUNT.get(account_key, set())
 
 
 def _prepend_health_warning(
@@ -112,11 +151,11 @@ def _fund_recommendations(
     deployable_cash = max(0, available_cash - minimum_cash)
 
     for position in positions:
-        tag = position.get("tag")
+        tag = position_strategy_tag(config, position, "fund")
         name = position["name"]
         daily_pct = _daily_pct(config, quotes, position)
         profit_pct = float(position.get("holding_pnl_pct", 0))
-        warn = _data_warning(config, quotes, position)
+        warn = _data_warning(config, quotes, position, "fund", tag)
 
         # Built-in logic per tag — no template layer, config.json only has thresholds
         if tag == "core_ai_dca":
@@ -194,12 +233,12 @@ def _stock_recommendations(
     recs: list[Recommendation] = []
 
     for position in stock.get("positions", []):
-        tag = position.get("tag")
+        tag = position_strategy_tag(config, position, "stock")
         name = position["name"]
         price = _price(config, quotes, position)
         shares = int(position.get("shares", 0))
         profit_pct = _profit_pct(config, quotes, position)
-        warn = _data_warning(config, quotes, position)
+        warn = _data_warning(config, quotes, position, "stock", tag)
 
         # Built-in logic per tag — no template layer
         if tag == "semiconductor":
@@ -296,10 +335,18 @@ def _profit_pct(config: dict[str, Any], quotes: dict[str, Quote], position: dict
     return 0.0
 
 
-def _live_data_missing(config: dict[str, Any], quotes: dict[str, Quote], position: dict[str, Any]) -> bool:
+def _live_data_missing(
+    config: dict[str, Any],
+    quotes: dict[str, Quote],
+    position: dict[str, Any],
+    account_key: str,
+    tag: str,
+) -> bool:
     """Check if live data is configured but unavailable for this position."""
     use_live = bool(config.get("market_provider", {}).get("use_live_proxy_for_decisions", False))
     if not use_live:
+        return False
+    if not strategy_requires_live_quote(tag, account_key):
         return False
     proxy = position.get("market_proxy")
     if not proxy:
@@ -308,9 +355,15 @@ def _live_data_missing(config: dict[str, Any], quotes: dict[str, Quote], positio
     return quote is None or quote.pct is None
 
 
-def _data_warning(config: dict[str, Any], quotes: dict[str, Quote], position: dict[str, Any]) -> str:
+def _data_warning(
+    config: dict[str, Any],
+    quotes: dict[str, Quote],
+    position: dict[str, Any],
+    account_key: str,
+    tag: str,
+) -> str:
     """Return a warning suffix if live data is expected but unavailable."""
-    if not _live_data_missing(config, quotes, position):
+    if not _live_data_missing(config, quotes, position, account_key, tag):
         return ""
     return "（实时行情缺失，参考值为持仓快照）"
 

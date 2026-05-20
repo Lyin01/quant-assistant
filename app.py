@@ -301,7 +301,7 @@ if page == "总览":
             st.warning("LLM 智能建议模块当前不可用，应用已自动降级到规则引擎视图。")
             st.caption(f"导入失败：{exc}")
         else:
-            llm_ctx = build_llm_context(portfolio, recs, quotes=quotes)
+            llm_ctx = build_llm_context(config, portfolio, recs, quotes=quotes)
             advice = generate_advice(llm_ctx)
 
             if advice["mode"] == "api":

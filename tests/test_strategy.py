@@ -83,6 +83,22 @@ def test_use_live_proxy_default_is_true():
     assert config["market_provider"]["use_live_proxy_for_decisions"] is True
 
 
+def test_imported_stock_positions_use_short_term_rule_when_available():
+    config = load_json("config.json")
+    portfolio = load_json("portfolio.json")
+
+    recs = generate_recommendations(config, portfolio, quotes={})
+    walter = next(rec for rec in recs if rec["instrument"] == "沃尔核材")
+    tongyu = next(rec for rec in recs if rec["instrument"] == "通宇通讯")
+
+    assert "当前无对应策略规则" not in walter["reason"]
+    assert "当前无对应策略规则" not in tongyu["reason"]
+    assert "短线持有" in walter["reason"]
+    assert "短线持有" in tongyu["reason"]
+    assert "实时行情缺失" not in walter["reason"]
+    assert "实时行情缺失" not in tongyu["reason"]
+
+
 def test_analytics_pipeline():
     frame = pd.DataFrame(
         {

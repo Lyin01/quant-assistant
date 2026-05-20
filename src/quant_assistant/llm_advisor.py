@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from .strategy import position_strategy_tag
 
 def build_llm_context(
+    config: dict[str, Any],
     portfolio: dict[str, Any],
     recommendations: list[dict[str, str]],
     quotes: dict[str, Any] | None = None,
@@ -32,7 +34,7 @@ def build_llm_context(
     uncovered = [
         {
             "name": p["name"],
-            "tag": p.get("tag", "unknown"),
+            "tag": position_strategy_tag(config, p, "stock") or p.get("tag", "unknown"),
             "market_value": p.get("market_value", 0),
             "holding_pnl_pct": p.get("holding_pnl_pct", 0),
             "shares": p.get("shares", 0),
@@ -40,7 +42,7 @@ def build_llm_context(
             "cost": p.get("cost", 0),
         }
         for p in stock_positions
-        if p.get("tag") == "imported"
+        if position_strategy_tag(config, p, "stock") == "imported"
     ]
 
     # Cash stress signal

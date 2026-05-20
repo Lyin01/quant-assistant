@@ -7,7 +7,7 @@ from .analytics import add_indicators, latest_signal
 from .data_provider import Quote, quote_for_proxy
 from .market_data import fetch_history
 from .market_scanner import scan_etfs
-from .strategy import generate_recommendations
+from .strategy import generate_recommendations, position_strategy_tag, strategy_requires_live_quote
 
 
 @dataclass
@@ -82,8 +82,11 @@ def _data_agent(
     # Quote coverage
     proxies = config.get("quotes", {}).get("proxies", {})
     needed = set()
-    for account in portfolio.get("accounts", {}).values():
+    for account_key, account in portfolio.get("accounts", {}).items():
         for p in account.get("positions", []):
+            tag = position_strategy_tag(config, p, account_key)
+            if not strategy_requires_live_quote(tag, account_key):
+                continue
             proxy = p.get("market_proxy")
             if proxy and proxy in proxies:
                 needed.add(proxy)
@@ -208,7 +211,7 @@ def _risk_agent(
             findings.append(f"仓位集中: {top['name']} 占股票市值 {pct:.1f}%")
 
     # Uncovered positions
-    uncovered = [p for p in stock_positions if p.get("tag") == "imported"]
+    uncovered = [p for p in stock_positions if position_strategy_tag(config, p, "stock") == "imported"]
     if uncovered:
         names = [p["name"] for p in uncovered]
         findings.append(f"无策略覆盖: {', '.join(names)}")
