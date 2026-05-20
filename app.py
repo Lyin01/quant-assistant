@@ -582,7 +582,7 @@ elif page == "导入持仓":
         key="single_screenshot",
     )
     if image_file is not None:
-        st.image(image_file, caption="已上传截图预览", use_container_width=True)
+        st.image(image_file, caption="已上传截图预览", width=400)
     if st.button("识别截图", type="primary", disabled=image_file is None):
         if image_file is not None:
             with st.spinner("正在识别截图..."):
