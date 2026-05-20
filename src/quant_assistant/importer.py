@@ -107,9 +107,126 @@ def parse_ocr_import_text(text: str) -> tuple[pd.DataFrame, dict[str, Any], list
     return parsed, summary, positions
 
 
+def _parse_pipe_delimited_rows(lines: list[str]) -> list[dict[str, Any]]:
+    """Parse pipe-delimited rows from OCR text (e.g. '半导体 | 203.50 | 100 | ...')."""
+    pipe_lines = [line for line in lines if "|" in line]
+    if len(pipe_lines) < 1:
+        return []
+
+    # Detect format by checking first data line
+    first_data = pipe_lines[0]
+    cols = [c.strip() for c in first_data.split("|")]
+    cols = [c for c in cols if c]  # remove empty from leading/trailing pipes
+
+    if len(cols) >= 7:
+        return _parse_pipe_stock_rows(pipe_lines)
+    if len(cols) >= 4:
+        return _parse_pipe_fund_rows(pipe_lines)
+    return []
+
+
+def _parse_pipe_stock_rows(pipe_lines: list[str]) -> list[dict[str, Any]]:
+    """Parse stock rows: name | market_value | shares | sellable | price | cost | pnl | pnl_pct."""
+    rows: list[dict[str, Any]] = []
+    for line in pipe_lines:
+        cols = [c.strip() for c in line.split("|")]
+        cols = [c for c in cols if c != ""]
+        if len(cols) < 7:
+            continue
+
+        name = _clean_ocr_name(cols[0])
+        if not name or _is_summary_name(name):
+            continue
+
+        row = _base_row(name)
+        try:
+            row["market_value"] = _parse_num(cols[1])
+            row["shares"] = _parse_num(cols[2])
+            # cols[3] is sellable shares, skip
+            row["price"] = _parse_num(cols[4])
+            row["cost"] = _parse_num(cols[5])
+            row["holding_pnl"] = _parse_num(cols[6])
+            if len(cols) >= 8:
+                row["holding_pnl_pct"] = _parse_percent(cols[7])
+        except (ValueError, IndexError):
+            continue
+
+        if row["market_value"] is not None:
+            rows.append(row)
+    return rows
+
+
+def _parse_pipe_fund_rows(pipe_lines: list[str]) -> list[dict[str, Any]]:
+    """Parse fund rows: name | market_value | daily_pct | pnl | pnl_pct."""
+    rows: list[dict[str, Any]] = []
+    for line in pipe_lines:
+        cols = [c.strip() for c in line.split("|")]
+        cols = [c for c in cols if c != ""]
+        if len(cols) < 4:
+            continue
+
+        name = _clean_ocr_name(cols[0])
+        if not name or _is_summary_name(name):
+            continue
+
+        row = _base_row(name)
+        try:
+            row["market_value"] = _parse_num(cols[1])
+            if len(cols) >= 3:
+                row["last_daily_pct"] = _parse_percent(cols[2])
+            if len(cols) >= 4:
+                row["holding_pnl"] = _parse_num(cols[3])
+            if len(cols) >= 5:
+                row["holding_pnl_pct"] = _parse_percent(cols[4])
+        except (ValueError, IndexError):
+            continue
+
+        if row["market_value"] is not None:
+            rows.append(row)
+    return rows
+
+
+def _parse_num(text: str) -> float | None:
+    """Parse a numeric value from OCR text, handling commas and whitespace."""
+    cleaned = text.strip().replace(",", "").replace("￥", "").replace("¥", "")
+    if not cleaned:
+        return None
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def _parse_percent(text: str) -> float | None:
+    """Parse a percentage value like '+1.54%' or '-3.24%'."""
+    cleaned = text.strip().rstrip("%").replace(",", "")
+    if not cleaned:
+        return None
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+_SUMMARY_NAMES = {
+    "名称", "持仓", "市值", "现价", "成本", "名称/市值", "持股/可卖",
+    "账户资产", "基金资产", "股票资产", "总资产", "总资产元",
+    "今日盈亏", "当日收益", "场内穿透", "持仓盈亏", "持有收益",
+    "总市值", "可用", "股票可用",
+}
+
+
+def _is_summary_name(name: str) -> bool:
+    return name in _SUMMARY_NAMES
+
+
 def parse_ocr_positions(text: str) -> pd.DataFrame:
     lines = [line.strip() for line in text.splitlines() if line.strip()]
-    screenshot_rows = _parse_multiline_stock_rows(lines) or _parse_multiline_fund_rows(lines)
+    screenshot_rows = (
+        _parse_pipe_delimited_rows(lines)
+        or _parse_multiline_stock_rows(lines)
+        or _parse_multiline_fund_rows(lines)
+    )
     if screenshot_rows:
         return pd.DataFrame(screenshot_rows, columns=PORTFOLIO_COLUMNS)
 

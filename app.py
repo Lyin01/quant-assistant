@@ -581,6 +581,8 @@ elif page == "导入持仓":
         type=["jpg", "jpeg", "png"],
         key="single_screenshot",
     )
+    if image_file is not None:
+        st.image(image_file, caption="已上传截图预览", use_container_width=True)
     if st.button("识别截图", type="primary", disabled=image_file is None):
         if image_file is not None:
             with st.spinner("正在识别截图..."):
@@ -607,14 +609,36 @@ elif page == "导入持仓":
 
     if parsed is not None:
         if summary:
-            summary_frame = pd.DataFrame([summary]).dropna(axis=1, how="all")
-            if not summary_frame.empty:
-                st.dataframe(summary_frame, use_container_width=True, hide_index=True)
+            summary_labels = {
+                "total_assets": "总资产",
+                "today_pnl": "今日盈亏",
+                "holding_pnl": "持仓盈亏",
+                "market_value": "总市值",
+                "available_cash": "可用资金",
+            }
+            summary_display = {summary_labels.get(k, k): v for k, v in summary.items() if v is not None}
+            if summary_display:
+                st.caption("账户概览")
+                sum_cols = st.columns(len(summary_display))
+                for col, (label, value) in zip(sum_cols, summary_display.items()):
+                    col.metric(label, f"{value:,.2f}")
 
         if parsed.empty:
             st.warning("未识别到持仓行。")
         else:
-            st.dataframe(parsed, use_container_width=True, hide_index=True)
+            st.caption(f"识别到 {len(parsed)} 条持仓")
+            display_cols = ["name", "market_value", "shares", "price", "cost", "holding_pnl", "holding_pnl_pct", "last_daily_pct"]
+            available = [c for c in display_cols if c in parsed.columns]
+            display_labels = {
+                "name": "名称", "market_value": "市值", "shares": "持股",
+                "price": "现价", "cost": "成本", "holding_pnl": "持仓盈亏",
+                "holding_pnl_pct": "盈亏%", "last_daily_pct": "日涨幅%",
+            }
+            st.dataframe(
+                parsed[available].rename(columns=display_labels),
+                use_container_width=True,
+                hide_index=True,
+            )
 
             from quant_assistant.history import compute_delta
 

@@ -241,3 +241,76 @@ def test_parse_fund_ocr_format_and_summary():
     assert frame.loc[0, "last_daily_pct"] == -1.54
     assert frame.loc[0, "holding_pnl"] == -76.65
     assert frame.loc[1, "holding_pnl_pct"] == 12.49
+
+
+def test_parse_pipe_delimited_stock_with_header():
+    """Pipe-delimited stock rows with header line should parse correctly."""
+    text = (
+        "名称/市值 持股/可卖 现价 成本 盈亏 盈亏比例\n"
+        "沃尔核材 | 2249.00 | 100 | 100 | 22.490 | 23.000 | -51.02 | -2.22%\n"
+        "纳指大成 | 1559.70 | 900 | 900 | 1.733 | 1.725 | +7.60 | +0.49%"
+    )
+    frame = parse_ocr_positions(text)
+    assert list(frame["name"]) == ["沃尔核材", "纳指大成"]
+    assert frame.loc[0, "market_value"] == 2249.00
+    assert frame.loc[0, "shares"] == 100
+    assert frame.loc[0, "price"] == 22.490
+    assert frame.loc[0, "cost"] == 23.000
+    assert frame.loc[0, "holding_pnl"] == -51.02
+    assert frame.loc[0, "holding_pnl_pct"] == -2.22
+    assert frame.loc[1, "price"] == 1.733
+    assert frame.loc[1, "holding_pnl_pct"] == 0.49
+
+
+def test_parse_pipe_stock_no_percent():
+    """Stock rows without percent column should parse correctly (7 cols)."""
+    text = "通宇通讯 | 1234.56 | 200 | 200 | 6.173 | 5.890 | +56.60"
+    frame = parse_ocr_positions(text)
+    assert frame.loc[0, "name"] == "通宇通讯"
+    assert frame.loc[0, "market_value"] == 1234.56
+    assert frame.loc[0, "shares"] == 200
+    assert frame.loc[0, "price"] == 6.173
+    assert frame.loc[0, "cost"] == 5.890
+    assert frame.loc[0, "holding_pnl"] == 56.60
+    assert pd.isna(frame.loc[0, "holding_pnl_pct"])
+
+
+def test_parse_pipe_fund_with_name_numbers():
+    """Fund names containing numbers (like 中证500) should not leak into numeric fields."""
+    text = (
+        "博时标普500ETF联接 | 109.18 | +0.77% | +9.18 | +9.18%\n"
+        "大成纳斯达克100 | 2046.11 | +0.73% | +46.11 | +2.31%"
+    )
+    frame = parse_ocr_positions(text)
+    assert frame.loc[0, "market_value"] == 109.18
+    assert frame.loc[0, "last_daily_pct"] == 0.77
+    assert frame.loc[0, "holding_pnl"] == 9.18
+    assert frame.loc[1, "market_value"] == 2046.11
+    assert frame.loc[1, "last_daily_pct"] == 0.73
+
+
+def test_parse_full_stock_screenshot():
+    """Full stock account OCR text with header and multiple positions."""
+    text = (
+        "总资产: 6245.08\n"
+        "今日盈亏: -40.00\n"
+        "持仓盈亏: -15.22\n"
+        "总市值: 4600.80\n"
+        "可用: 1644.28\n"
+        "名称/市值 持股/可卖 现价 成本 盈亏 盈亏比例\n"
+        "沃尔核材 | 2249.00 | 100 | 100 | 22.490 | 23.000 | -51.02 | -2.22%\n"
+        "纳指大成 | 1559.70 | 900 | 900 | 1.733 | 1.725 | +7.60 | +0.49%\n"
+        "创新药 | 239.40 | 300 | 300 | 0.798 | 0.825 | -8.00 | -3.23%\n"
+        "半导体 | 203.50 | 100 | 100 | 2.035 | 2.071 | -3.60 | -1.74%"
+    )
+    from quant_assistant.importer import parse_ocr_import_text
+    parsed, summary, positions = parse_ocr_import_text(text)
+
+    assert summary["total_assets"] == 6245.08
+    assert summary["today_pnl"] == -40.00
+    assert summary["available_cash"] == 1644.28
+    assert len(positions) == 4
+    assert positions[0]["name"] == "沃尔核材"
+    assert positions[0]["price"] == 22.490
+    assert positions[3]["name"] == "半导体"
+    assert positions[3]["shares"] == 100
