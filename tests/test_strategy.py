@@ -8,7 +8,7 @@ from quant_assistant.analytics import (
     interpret_backtest,
     latest_signal,
 )
-from quant_assistant.importer import parse_ocr_positions, parse_ocr_summary
+from quant_assistant.importer import parse_ocr_positions, parse_ocr_summary, detect_target_account, split_positions_by_account, parse_ocr_import_text
 import pandas as pd
 
 
@@ -314,3 +314,52 @@ def test_parse_full_stock_screenshot():
     assert positions[0]["price"] == 22.490
     assert positions[3]["name"] == "半导体"
     assert positions[3]["shares"] == 100
+
+
+def test_detect_target_account_stock():
+    text = (
+        "总资产: 6245.08\n"
+        "名称/市值 持股/可卖 现价 成本 盈亏 盈亏比例\n"
+        "半导体 | 203.50 | 100 | 100 | 2.035 | 2.071 | -3.60 | -1.74%"
+    )
+    assert detect_target_account(text) == "stock"
+
+
+def test_detect_target_account_fund():
+    text = (
+        "账户资产: 18118.73\n"
+        "易方达中证500 | 5594.65 | -1.54% | -76.65 | -1.35%"
+    )
+    assert detect_target_account(text) == "fund"
+
+
+def test_detect_target_account_mixed():
+    text = (
+        "名称/市值 持股/可卖 现价 成本 盈亏 盈亏比例\n"
+        "半导体 | 203.50 | 100 | 100 | 2.035 | 2.071 | -3.60 | -1.74%\n"
+        "账户资产: 18118.73\n"
+        "易方达中证500 | 5594.65 | -1.54% | -76.65 | -1.35%"
+    )
+    assert detect_target_account(text) == "mixed"
+
+
+def test_split_positions_by_account():
+    text = (
+        "名称/市值 持股/可卖 现价 成本 盈亏 盈亏比例\n"
+        "沃尔核材 | 2249.00 | 100 | 100 | 22.490 | 23.000 | -51.02 | -2.22%\n"
+        "半导体 | 203.50 | 100 | 100 | 2.035 | 2.071 | -3.60 | -1.74%\n"
+        "账户资产: 18118.73\n"
+        "易方达中证500 | 5594.65 | -1.54% | -76.65 | -1.35%\n"
+        "天弘中证电网设备 | 3270.40 | -3.24% | +363.23 | +12.49%"
+    )
+    _, _, positions = parse_ocr_import_text(text)
+    stock_pos, fund_pos = split_positions_by_account(positions)
+
+    assert len(stock_pos) == 2
+    assert len(fund_pos) == 2
+    stock_names = {p["name"] for p in stock_pos}
+    fund_names = {p["name"] for p in fund_pos}
+    assert "沃尔核材" in stock_names
+    assert "半导体" in stock_names
+    assert "易方达中证500" in fund_names
+    assert "天弘中证电网设备" in fund_names

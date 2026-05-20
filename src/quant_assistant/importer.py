@@ -107,22 +107,95 @@ def parse_ocr_import_text(text: str) -> tuple[pd.DataFrame, dict[str, Any], list
     return parsed, summary, positions
 
 
+def detect_target_account(text: str) -> str:
+    """Detect whether OCR text is from a stock or fund account.
+
+    Returns 'stock', 'fund', or 'mixed' (both types detected).
+    """
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    has_stock_signal = False
+    has_fund_signal = False
+
+    for line in lines:
+        if "名称/市值" in line or "持股/可卖" in line:
+            has_stock_signal = True
+        if "账户资产" in line or "基金资产" in line or "股票资产" in line:
+            has_fund_signal = True
+        if "|" in line:
+            name = _name_from_line(line)
+            if name and any(name.startswith(p) for p in _FUND_NAME_PREFIXES):
+                has_fund_signal = True
+
+    if has_stock_signal and has_fund_signal:
+        return "mixed"
+    if has_stock_signal:
+        return "stock"
+    if has_fund_signal:
+        return "fund"
+    return "stock"
+
+
+def split_positions_by_account(
+    positions: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split parsed positions into (stock_positions, fund_positions).
+
+    Uses tag and market_proxy to classify:
+    - Positions with shares/price/cost → stock
+    - Positions with only market_value/pnl/pct → fund
+    - Tags like 'overseas', 'wide_index', 'defensive' without shares → fund
+    """
+    stock_positions: list[dict[str, Any]] = []
+    fund_positions: list[dict[str, Any]] = []
+
+    for pos in positions:
+        if _is_fund_position(pos):
+            fund_positions.append(pos)
+        else:
+            stock_positions.append(pos)
+
+    return stock_positions, fund_positions
+
+
+def _is_fund_position(pos: dict[str, Any]) -> bool:
+    """Heuristic: a position is a fund if it has no shares but has market_value."""
+    has_shares = pos.get("shares") is not None and float(pos.get("shares", 0) or 0) > 0
+    has_price = pos.get("price") is not None
+    has_market_value = pos.get("market_value") is not None and float(pos.get("market_value", 0) or 0) > 0
+
+    # Explicit fund tags
+    fund_tags = {"wide_index", "tactical_ai", "core_ai_dca", "power_grid", "military",
+                 "overseas", "healthcare", "defensive"}
+    if pos.get("tag") in fund_tags and not has_shares:
+        return True
+
+    # Has market_value but no shares → likely fund
+    if has_market_value and not has_shares and not has_price:
+        return True
+
+    return False
+
+
 def _parse_pipe_delimited_rows(lines: list[str]) -> list[dict[str, Any]]:
-    """Parse pipe-delimited rows from OCR text (e.g. '半导体 | 203.50 | 100 | ...')."""
+    """Parse pipe-delimited rows from OCR text (e.g. '半导体 | 203.50 | 100 | ...').
+
+    Classifies each line individually by column count to handle mixed stock+fund text.
+    """
     pipe_lines = [line for line in lines if "|" in line]
     if len(pipe_lines) < 1:
         return []
 
-    # Detect format by checking first data line
-    first_data = pipe_lines[0]
-    cols = [c.strip() for c in first_data.split("|")]
-    cols = [c for c in cols if c]  # remove empty from leading/trailing pipes
-
-    if len(cols) >= 7:
-        return _parse_pipe_stock_rows(pipe_lines)
-    if len(cols) >= 4:
-        return _parse_pipe_fund_rows(pipe_lines)
-    return []
+    rows: list[dict[str, Any]] = []
+    for line in pipe_lines:
+        cols = [c.strip() for c in line.split("|")]
+        cols = [c for c in cols if c != ""]
+        if len(cols) >= 7:
+            stock_rows = _parse_pipe_stock_rows([line])
+            rows.extend(stock_rows)
+        elif len(cols) >= 4:
+            fund_rows = _parse_pipe_fund_rows([line])
+            rows.extend(fund_rows)
+    return rows
 
 
 def _parse_pipe_stock_rows(pipe_lines: list[str]) -> list[dict[str, Any]]:

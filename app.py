@@ -35,7 +35,7 @@ from quant_assistant.data_source_health import read_health, summarize_by_provide
 from quant_assistant.daily_brief import assess_quote_freshness, build_daily_cockpit, friendly_source_messages, is_trading_day
 from quant_assistant.data_provider import build_provider, collect_secids, quote_status
 from quant_assistant.user_data import get_or_create_portfolio, load_config, save_portfolio, user_history_file
-from quant_assistant.importer import parse_ocr_import_text, update_account_from_import
+from quant_assistant.importer import parse_ocr_import_text, update_account_from_import, detect_target_account, split_positions_by_account
 from quant_assistant.commodity_chain import chain_summary, fetch_chain_prices, list_chains
 from quant_assistant.llm_advisor import build_llm_prompt, diagnose_config, load_deepseek_settings, request_deepseek_advice
 from quant_assistant.macro_dashboard import fetch_macro_indicators, macro_summary
@@ -567,26 +567,39 @@ elif page == "回测":
 elif page == "导入持仓":
     st.subheader("截图 OCR 导入")
 
-    account_labels = {"fund": "支付宝基金 (fund)", "stock": "国信证券 (stock)"}
+    account_labels = {"auto": "自动识别", "fund": "支付宝基金 (fund)", "stock": "国信证券 (stock)"}
     selected_account = st.radio(
         "目标账户",
-        ["fund", "stock"],
+        ["auto", "fund", "stock"],
         horizontal=True,
         format_func=lambda item: account_labels[item],
         key="ocr_target_account",
     )
 
     image_file = st.file_uploader(
-        "上传截图 JPG / PNG",
+        "上传截图 JPG / PNG（支持同时上传基金+股票截图）",
         type=["jpg", "jpeg", "png"],
+        accept_multiple_files=True,
         key="single_screenshot",
     )
-    if image_file is not None:
-        st.image(image_file, caption="已上传截图预览", width=400)
-    if st.button("识别截图", type="primary", disabled=image_file is None):
-        if image_file is not None:
+    if image_file:
+        if len(image_file) == 1:
+            st.image(image_file[0], caption="已上传截图预览", width=280)
+        else:
+            cols = st.columns(min(len(image_file), 3))
+            for col, f in zip(cols, image_file):
+                with col:
+                    st.image(f, caption=f.name, width=280)
+
+    if st.button("识别截图", type="primary", disabled=not image_file):
+        if image_file:
             with st.spinner("正在识别截图..."):
-                st.session_state["ocr_text_input"] = run_ocr(image_file.getvalue())
+                all_text = []
+                for f in image_file:
+                    text = run_ocr(f.getvalue())
+                    if text:
+                        all_text.append(text)
+                st.session_state["ocr_text_input"] = "\n".join(all_text)
             for key in ("ocr_import_parsed", "ocr_import_summary", "ocr_import_positions"):
                 st.session_state.pop(key, None)
 
@@ -594,18 +607,23 @@ elif page == "导入持仓":
         "OCR 文本",
         key="ocr_text_input",
         height=260,
-        placeholder="上传截图识别，或直接粘贴手机 OCR 文本。",
+        placeholder="上传截图识别，或直接粘贴手机 OCR 文本。支持同时粘贴基金和股票文本。",
     )
 
     if st.button("解析文本", disabled=not str(ocr_text).strip()):
-        parsed, summary, parsed_positions = parse_ocr_import_text(str(ocr_text))
+        text = str(ocr_text)
+        parsed, summary, parsed_positions = parse_ocr_import_text(text)
+        detected = detect_target_account(text) if selected_account == "auto" else selected_account
+
         st.session_state["ocr_import_parsed"] = parsed
         st.session_state["ocr_import_summary"] = summary
         st.session_state["ocr_import_positions"] = parsed_positions
+        st.session_state["ocr_import_detected"] = detected
 
     parsed = st.session_state.get("ocr_import_parsed")
     summary = st.session_state.get("ocr_import_summary")
     parsed_positions = st.session_state.get("ocr_import_positions", [])
+    detected = st.session_state.get("ocr_import_detected", selected_account)
 
     if parsed is not None:
         if summary:
@@ -627,6 +645,7 @@ elif page == "导入持仓":
             st.warning("未识别到持仓行。")
         else:
             st.caption(f"识别到 {len(parsed)} 条持仓")
+
             display_cols = ["name", "market_value", "shares", "price", "cost", "holding_pnl", "holding_pnl_pct", "last_daily_pct"]
             available = [c for c in display_cols if c in parsed.columns]
             display_labels = {
@@ -642,57 +661,102 @@ elif page == "导入持仓":
 
             from quant_assistant.history import compute_delta
 
-            target_account = portfolio["accounts"][selected_account]
-            delta = compute_delta(target_account.get("positions", []), parsed_positions)
+            if detected == "mixed" or selected_account == "auto":
+                stock_pos, fund_pos = split_positions_by_account(parsed_positions)
 
-            diff_parts = []
-            if delta.get("added"):
-                diff_parts.append(f"新增 {len(delta['added'])} 条: {', '.join(delta['added'][:5])}")
-            if delta.get("updated"):
-                diff_parts.append(f"更新 {len(delta['updated'])} 条: {', '.join(delta['updated'][:5])}")
-            if delta.get("removed"):
-                diff_parts.append(f"移除 {len(delta['removed'])} 条: {', '.join(delta['removed'][:5])}")
+                write_plan = []
+                if stock_pos:
+                    write_plan.append(("stock", stock_pos))
+                if fund_pos:
+                    write_plan.append(("fund", fund_pos))
 
-            if diff_parts:
-                preview_text = " | ".join(diff_parts)
-                st.info(f"写入后将变更：{preview_text}")
+                for acct_key, positions in write_plan:
+                    acct_label = account_labels[acct_key]
+                    target = portfolio["accounts"][acct_key]
+                    delta = compute_delta(target.get("positions", []), positions)
+                    parts = []
+                    if delta.get("added"):
+                        parts.append(f"新增 {len(delta['added'])} 条")
+                    if delta.get("updated"):
+                        parts.append(f"更新 {len(delta['updated'])} 条")
+                    if delta.get("removed"):
+                        parts.append(f"移除 {len(delta['removed'])} 条")
+                    summary_text = "，".join(parts) if parts else "无变更"
+                    st.info(f"**{acct_label}**：{summary_text} ({len(positions)} 条持仓)")
+
+                if st.button("确认写入", type="primary", key="ocr_update_btn"):
+                    from quant_assistant.history import record_change
+
+                    for acct_key, positions in write_plan:
+                        target = portfolio["accounts"][acct_key]
+                        previous_snapshot = dict(target)
+                        delta = compute_delta(target.get("positions", []), positions)
+
+                        updated_account = update_account_from_import(
+                            target, positions, acct_key, summary if acct_key == write_plan[-1][0] else None,
+                        )
+                        portfolio["accounts"][acct_key] = updated_account
+
+                        record_change(
+                            user_history_file(user),
+                            change_type="ocr_import",
+                            account=acct_key,
+                            delta=delta,
+                            summary={"total_assets": updated_account.get("total_assets"), "total_positions": len(updated_account["positions"])},
+                            previous_snapshot=previous_snapshot,
+                        )
+
+                    portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    save_portfolio(user, portfolio)
+                    reload_portfolio()
+                    for key in ("ocr_import_parsed", "ocr_import_summary", "ocr_import_positions", "ocr_import_detected", "ocr_text_input"):
+                        st.session_state.pop(key, None)
+                    st.success(f"已写入 {len(write_plan)} 个账户。")
+                    st.rerun()
             else:
-                st.info("解析结果与当前持仓一致，无变更。")
+                target_account = portfolio["accounts"][selected_account]
+                delta = compute_delta(target_account.get("positions", []), parsed_positions)
 
-            if st.button("确认写入", type="primary", key="ocr_update_btn"):
-                from quant_assistant.history import record_change
+                diff_parts = []
+                if delta.get("added"):
+                    diff_parts.append(f"新增 {len(delta['added'])} 条: {', '.join(delta['added'][:5])}")
+                if delta.get("updated"):
+                    diff_parts.append(f"更新 {len(delta['updated'])} 条: {', '.join(delta['updated'][:5])}")
+                if delta.get("removed"):
+                    diff_parts.append(f"移除 {len(delta['removed'])} 条: {', '.join(delta['removed'][:5])}")
 
-                previous_snapshot = dict(target_account)
+                if diff_parts:
+                    preview_text = " | ".join(diff_parts)
+                    st.info(f"写入后将变更：{preview_text}")
+                else:
+                    st.info("解析结果与当前持仓一致，无变更。")
 
-                updated_account = update_account_from_import(
-                    target_account,
-                    parsed_positions,
-                    selected_account,
-                    summary,
-                )
-                merged_positions = updated_account["positions"]
-                portfolio["accounts"][selected_account] = updated_account
-                portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+                if st.button("确认写入", type="primary", key="ocr_update_btn"):
+                    from quant_assistant.history import record_change
 
-                account_summary = {
-                    "total_assets": updated_account.get("total_assets"),
-                    "total_positions": len(merged_positions),
-                }
-                record_change(
-                    user_history_file(user),
-                    change_type="ocr_import",
-                    account=selected_account,
-                    delta=delta,
-                    summary=account_summary,
-                    previous_snapshot=previous_snapshot,
-                )
+                    previous_snapshot = dict(target_account)
+                    updated_account = update_account_from_import(
+                        target_account, parsed_positions, selected_account, summary,
+                    )
+                    merged_positions = updated_account["positions"]
+                    portfolio["accounts"][selected_account] = updated_account
+                    portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-                save_portfolio(user, portfolio)
-                reload_portfolio()
-                for key in ("ocr_import_parsed", "ocr_import_summary", "ocr_import_positions", "ocr_text_input"):
-                    st.session_state.pop(key, None)
-                st.success(f"已更新 {account_labels[selected_account]}，共 {len(merged_positions)} 条持仓。")
-                st.rerun()
+                    record_change(
+                        user_history_file(user),
+                        change_type="ocr_import",
+                        account=selected_account,
+                        delta=delta,
+                        summary={"total_assets": updated_account.get("total_assets"), "total_positions": len(merged_positions)},
+                        previous_snapshot=previous_snapshot,
+                    )
+
+                    save_portfolio(user, portfolio)
+                    reload_portfolio()
+                    for key in ("ocr_import_parsed", "ocr_import_summary", "ocr_import_positions", "ocr_import_detected", "ocr_text_input"):
+                        st.session_state.pop(key, None)
+                    st.success(f"已更新 {account_labels[selected_account]}，共 {len(merged_positions)} 条持仓。")
+                    st.rerun()
 
 elif page == "分析":
     st.subheader("资产分布")
