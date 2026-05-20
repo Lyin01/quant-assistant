@@ -37,11 +37,18 @@ from quant_assistant.data_provider import build_provider, collect_secids, quote_
 from quant_assistant.user_data import get_or_create_portfolio, load_config, save_portfolio, user_history_file
 from quant_assistant.importer import parse_ocr_import_text, update_account_from_import
 from quant_assistant.commodity_chain import chain_summary, fetch_chain_prices, list_chains
+from quant_assistant.llm_advisor import build_llm_prompt, load_deepseek_settings, request_deepseek_advice
 from quant_assistant.macro_dashboard import fetch_macro_indicators, macro_summary
 from quant_assistant.market_data import fetch_etf_ranking, fetch_history, instrument_options
 from quant_assistant.market_scanner import DEFAULT_SCAN_LIMIT, scan_etfs
 from quant_assistant.policy_radar import fetch_policy_news, summarize_policy_trends
-from quant_assistant.recommendation_view import fund_holdings_table, recommendation_table, split_recommendations, stock_holdings_table
+from quant_assistant.recommendation_view import (
+    fund_holdings_table,
+    recommendation_table,
+    split_recommendations,
+    stock_holdings_table,
+    strategy_coverage_issues,
+)
 from quant_assistant.schema import blocking_issue_count as schema_blocking_issue_count, validate_app_data
 from quant_assistant.strategy import generate_recommendations
 
@@ -213,6 +220,7 @@ if page == "总览":
     health_records = read_health(days=7)
     health_summary = summarize_by_provider(health_records) if health_records else None
     recs = generate_recommendations(config, portfolio, quotes=quotes, data_source_health=health_summary, is_trading_day=is_trading_day())
+    coverage_issues = strategy_coverage_issues(config, portfolio)
     data_source = "实时行情" if quotes else "持仓快照"
     actionable_recs, watchlist_recs = split_recommendations(recs)
 
@@ -250,6 +258,44 @@ if page == "总览":
     else:
         st.dataframe(stock_holdings, use_container_width=True, hide_index=True)
 
+    with st.expander("LLM 智能建议", expanded=False):
+        llm_settings = load_deepseek_settings(PROJECT_ROOT)
+        llm_prompt = build_llm_prompt(
+            portfolio=portfolio,
+            actionable_recommendations=actionable_recs,
+            watchlist_recommendations=watchlist_recs,
+            coverage_issues=coverage_issues,
+            data_source=data_source,
+            quote_freshness=quote_freshness,
+        )
+
+        if llm_settings.configured:
+            st.success(f"已检测到 DeepSeek 配置，当前模型：{llm_settings.model}")
+            if st.button("调用 DeepSeek 生成建议", key="generate_deepseek_advice"):
+                with st.spinner("正在请求 DeepSeek..."):
+                    try:
+                        st.session_state["deepseek_advice"] = request_deepseek_advice(llm_settings, llm_prompt)
+                        st.session_state.pop("deepseek_advice_error", None)
+                    except Exception as exc:
+                        st.session_state["deepseek_advice_error"] = str(exc)
+        else:
+            st.info("未配置 DeepSeek API Key，请先在项目根目录 .env 中填写后再调用。")
+
+        if st.session_state.get("deepseek_advice_error"):
+            st.error(st.session_state["deepseek_advice_error"])
+
+        advice = st.session_state.get("deepseek_advice", "")
+        if advice:
+            st.markdown("##### DeepSeek 返回")
+            st.write(advice)
+
+        st.text_area(
+            "LLM Prompt（可复制到 Kimi/DeepSeek）",
+            value=llm_prompt,
+            height=260,
+            key="deepseek_prompt_preview",
+        )
+
     with st.expander("行情源状态", expanded=not bool(quotes)):
         st.caption(quote_status(config))
         if quotes:
@@ -284,40 +330,20 @@ if page == "总览":
         data_detail=str(quote_freshness["detail"]),
         actionable_count=len(actionable_recs),
         watchlist_count=len(watchlist_recs),
-        coverage_issue_count=0,
+        coverage_issue_count=len(coverage_issues),
     )
     st.dataframe(pd.DataFrame(cockpit_rows), use_container_width=True, hide_index=True)
+
+    with st.expander(f"策略覆盖检查（{len(coverage_issues)} 条）", expanded=False):
+        if coverage_issues:
+            st.dataframe(pd.DataFrame(coverage_issues), use_container_width=True, hide_index=True)
+        else:
+            st.info("当前没有检测到明显的策略覆盖缺口。")
 
     with st.expander("完整建议原文"):
         for rec in recs:
             st.write(f'**{rec["action"]}** `{rec["instrument"]}` `{rec["amount"]}`')
             st.caption(rec["reason"])
-
-    # LLM Advisor Panel
-    with st.expander("LLM 智能建议", expanded=True):
-        try:
-            from quant_assistant.llm_advisor import build_llm_context, generate_advice
-        except ImportError as exc:
-            st.warning("LLM 智能建议模块当前不可用，应用已自动降级到规则引擎视图。")
-            st.caption(f"导入失败：{exc}")
-        else:
-            llm_ctx = build_llm_context(config, portfolio, recs, quotes=quotes)
-            advice = generate_advice(llm_ctx)
-
-            if advice["mode"] == "api":
-                st.success("✅ DeepSeek API 已生成建议")
-                st.markdown(advice["text"])
-                usage = advice.get("usage", {})
-                if usage:
-                    st.caption(
-                        f"Token 消耗: prompt={usage.get('prompt_tokens', '?')}, completion={usage.get('completion_tokens', '?')}"
-                    )
-            elif advice["mode"] == "api_error":
-                st.error(advice["text"])
-                st.text_area("LLM Prompt", advice.get("prompt", ""), height=300)
-            else:
-                st.info(advice["text"])
-                st.text_area("LLM Prompt（可复制到 Kimi/DeepSeek）", advice.get("prompt", ""), height=300)
 
     # Multi-Agent Pipeline Panel
     with st.expander("多 Agent 分析管道", expanded=False):
