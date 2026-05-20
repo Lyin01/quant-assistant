@@ -8,16 +8,6 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-import streamlit as st
-
-from .strategy import position_strategy_tag
-
-try:
-    from streamlit.errors import StreamlitSecretNotFoundError
-except Exception:  # pragma: no cover - compatibility fallback
-    StreamlitSecretNotFoundError = Exception
-
-
 DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash"
 
@@ -64,6 +54,7 @@ def build_llm_context(
     recommendations: list[dict[str, str]],
     quotes: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    position_strategy_tag = _load_position_strategy_tag()
     fund = portfolio["accounts"]["fund"]
     stock = portfolio["accounts"]["stock"]
 
@@ -319,6 +310,12 @@ def _load_env_file(path: Path) -> dict[str, str]:
 
 def _load_streamlit_secrets() -> dict[str, str]:
     try:
+        import streamlit as st
+        try:
+            from streamlit.errors import StreamlitSecretNotFoundError
+        except Exception:  # pragma: no cover - compatibility fallback
+            StreamlitSecretNotFoundError = Exception
+
         keys = ("DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL", "DEEPSEEK_MODEL")
         values: dict[str, str] = {}
         for key in keys:
@@ -328,3 +325,15 @@ def _load_streamlit_secrets() -> dict[str, str]:
         return values
     except StreamlitSecretNotFoundError:
         return {}
+    except Exception:
+        return {}
+
+
+def _load_position_strategy_tag():
+    try:
+        from .strategy import position_strategy_tag
+        return position_strategy_tag
+    except Exception:
+        def _fallback(config: dict[str, Any], position: dict[str, Any], account_key: str) -> str:
+            return str(position.get("tag", "")).strip()
+        return _fallback
