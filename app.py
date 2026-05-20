@@ -35,7 +35,13 @@ from quant_assistant.data_source_health import read_health, summarize_by_provide
 from quant_assistant.daily_brief import assess_quote_freshness, build_daily_cockpit, friendly_source_messages, is_trading_day
 from quant_assistant.data_provider import build_provider, collect_secids, quote_status
 from quant_assistant.user_data import get_or_create_portfolio, load_config, save_portfolio, user_history_file
-from quant_assistant.importer import parse_ocr_import_text, update_account_from_import, detect_target_account, split_positions_by_account
+try:
+    from quant_assistant.importer import parse_ocr_import_text, update_account_from_import, detect_target_account, split_positions_by_account
+except Exception as _imp_err:
+    import traceback
+    st.error(f"importer 加载失败: {_imp_err}")
+    st.code(traceback.format_exc())
+    st.stop()
 from quant_assistant.commodity_chain import chain_summary, fetch_chain_prices, list_chains
 from quant_assistant.llm_advisor import build_llm_prompt, diagnose_config, load_deepseek_settings, request_deepseek_advice
 from quant_assistant.macro_dashboard import fetch_macro_indicators, macro_summary
