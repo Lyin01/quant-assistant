@@ -24,7 +24,7 @@ def test_load_deepseek_settings_from_env_file(tmp_path, monkeypatch):
             [
                 "DEEPSEEK_API_KEY=test-key",
                 "DEEPSEEK_BASE_URL=https://api.deepseek.com",
-                "DEEPSEEK_MODEL=deepseek-v4-flash",
+                "DEEPSEEK_MODEL=deepseek-v4-pro",
             ]
         ),
         encoding="utf-8",
@@ -35,7 +35,7 @@ def test_load_deepseek_settings_from_env_file(tmp_path, monkeypatch):
     assert settings.configured is True
     assert settings.api_key == "test-key"
     assert settings.base_url == "https://api.deepseek.com"
-    assert settings.model == "deepseek-v4-flash"
+    assert settings.model == "deepseek-v4-pro"
 
 
 def test_load_deepseek_settings_prefers_environment(monkeypatch, tmp_path):
@@ -126,7 +126,7 @@ def test_load_deepseek_settings_from_nested_streamlit_secrets(monkeypatch, tmp_p
                 "client_id": "abc",
                 "DEEPSEEK_API_KEY": "nested-key",
                 "DEEPSEEK_BASE_URL": "https://api.deepseek.com",
-                "DEEPSEEK_MODEL": "deepseek-v4-flash",
+                "DEEPSEEK_MODEL": "deepseek-v4-pro",
             }
         }
     }
@@ -141,4 +141,4 @@ def test_load_deepseek_settings_from_nested_streamlit_secrets(monkeypatch, tmp_p
     assert settings.configured is True
     assert settings.api_key == "nested-key"
     assert settings.base_url == "https://api.deepseek.com"
-    assert settings.model == "deepseek-v4-flash"
+    assert settings.model == "deepseek-v4-pro"
