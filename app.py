@@ -295,23 +295,29 @@ if page == "总览":
 
     # LLM Advisor Panel
     with st.expander("LLM 智能建议", expanded=True):
-        from quant_assistant.llm_advisor import build_llm_context, generate_advice
-
-        llm_ctx = build_llm_context(portfolio, recs, quotes=quotes)
-        advice = generate_advice(llm_ctx)
-
-        if advice["mode"] == "api":
-            st.success("✅ DeepSeek API 已生成建议")
-            st.markdown(advice["text"])
-            usage = advice.get("usage", {})
-            if usage:
-                st.caption(f"Token 消耗: prompt={usage.get('prompt_tokens', '?')}, completion={usage.get('completion_tokens', '?')}")
-        elif advice["mode"] == "api_error":
-            st.error(advice["text"])
-            st.text_area("LLM Prompt", advice.get("prompt", ""), height=300)
+        try:
+            from quant_assistant.llm_advisor import build_llm_context, generate_advice
+        except ImportError as exc:
+            st.warning("LLM 智能建议模块当前不可用，应用已自动降级到规则引擎视图。")
+            st.caption(f"导入失败：{exc}")
         else:
-            st.info(advice["text"])
-            st.text_area("LLM Prompt（可复制到 Kimi/DeepSeek）", advice.get("prompt", ""), height=300)
+            llm_ctx = build_llm_context(portfolio, recs, quotes=quotes)
+            advice = generate_advice(llm_ctx)
+
+            if advice["mode"] == "api":
+                st.success("✅ DeepSeek API 已生成建议")
+                st.markdown(advice["text"])
+                usage = advice.get("usage", {})
+                if usage:
+                    st.caption(
+                        f"Token 消耗: prompt={usage.get('prompt_tokens', '?')}, completion={usage.get('completion_tokens', '?')}"
+                    )
+            elif advice["mode"] == "api_error":
+                st.error(advice["text"])
+                st.text_area("LLM Prompt", advice.get("prompt", ""), height=300)
+            else:
+                st.info(advice["text"])
+                st.text_area("LLM Prompt（可复制到 Kimi/DeepSeek）", advice.get("prompt", ""), height=300)
 
     # Multi-Agent Pipeline Panel
     with st.expander("多 Agent 分析管道", expanded=False):
