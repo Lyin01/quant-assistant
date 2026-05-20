@@ -1,4 +1,6 @@
 import importlib
+import sys
+import types
 from pathlib import Path
 
 from quant_assistant.llm_advisor import build_llm_prompt, diagnose_config, load_deepseek_settings
@@ -110,3 +112,33 @@ def test_diagnose_config_no_env_file(tmp_path, monkeypatch):
 
     assert diag["env_file_exists"] is False
     assert diag["sources"]["env_file"] == "未配置或不存在"
+
+
+def test_load_deepseek_settings_from_nested_streamlit_secrets(monkeypatch, tmp_path):
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_BASE_URL", raising=False)
+    monkeypatch.delenv("DEEPSEEK_MODEL", raising=False)
+
+    fake_streamlit = types.ModuleType("streamlit")
+    fake_streamlit.secrets = {
+        "oauth": {
+            "github": {
+                "client_id": "abc",
+                "DEEPSEEK_API_KEY": "nested-key",
+                "DEEPSEEK_BASE_URL": "https://api.deepseek.com",
+                "DEEPSEEK_MODEL": "deepseek-v4-flash",
+            }
+        }
+    }
+    fake_errors = types.ModuleType("streamlit.errors")
+    fake_errors.StreamlitSecretNotFoundError = RuntimeError
+
+    monkeypatch.setitem(sys.modules, "streamlit", fake_streamlit)
+    monkeypatch.setitem(sys.modules, "streamlit.errors", fake_errors)
+
+    settings = load_deepseek_settings(tmp_path)
+
+    assert settings.configured is True
+    assert settings.api_key == "nested-key"
+    assert settings.base_url == "https://api.deepseek.com"
+    assert settings.model == "deepseek-v4-flash"

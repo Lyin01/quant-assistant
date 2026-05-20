@@ -337,9 +337,13 @@ def diagnose_config(project_root: str | Path) -> dict[str, Any]:
     result["sources"]["env_var"] = f"已设置 ({_mask(env_key)})" if env_key else "未设置"
 
     # Check Streamlit secrets
-    secret_values = _load_streamlit_secrets()
+    secret_values, secret_sources = _load_streamlit_secrets_with_sources()
     s_key = secret_values.get("DEEPSEEK_API_KEY", "")
-    result["sources"]["streamlit_secrets"] = f"已配置 ({_mask(s_key)})" if s_key else "未配置"
+    if s_key:
+        source_path = secret_sources.get("DEEPSEEK_API_KEY", "未知位置")
+        result["sources"]["streamlit_secrets"] = f"已配置 ({_mask(s_key)})，来源: {source_path}"
+    else:
+        result["sources"]["streamlit_secrets"] = "未配置"
 
     # Check .env file
     env_values = _load_env_file(env_path)
@@ -363,6 +367,10 @@ def _load_env_file(path: Path) -> dict[str, str]:
 
 
 def _load_streamlit_secrets() -> dict[str, str]:
+    return _load_streamlit_secrets_with_sources()[0]
+
+
+def _load_streamlit_secrets_with_sources() -> tuple[dict[str, str], dict[str, str]]:
     try:
         import streamlit as st
         try:
@@ -371,35 +379,54 @@ def _load_streamlit_secrets() -> dict[str, str]:
             StreamlitSecretNotFoundError = Exception
 
         values: dict[str, str] = {}
+        sources: dict[str, str] = {}
 
         top_level_aliases = {
             "DEEPSEEK_API_KEY": ("DEEPSEEK_API_KEY", "deepseek_api_key"),
             "DEEPSEEK_BASE_URL": ("DEEPSEEK_BASE_URL", "deepseek_base_url"),
             "DEEPSEEK_MODEL": ("DEEPSEEK_MODEL", "deepseek_model"),
         }
-        for normalized_key, aliases in top_level_aliases.items():
-            for alias in aliases:
-                raw = st.secrets.get(alias, "")
-                if raw:
-                    values[normalized_key] = str(raw)
-                    break
 
-        for section_name in ("deepseek", "DEEPSEEK"):
-            section = st.secrets.get(section_name, {})
-            if not hasattr(section, "get"):
-                continue
-            if not values.get("DEEPSEEK_API_KEY") and section.get("api_key"):
-                values["DEEPSEEK_API_KEY"] = str(section.get("api_key"))
-            if not values.get("DEEPSEEK_BASE_URL") and section.get("base_url"):
-                values["DEEPSEEK_BASE_URL"] = str(section.get("base_url"))
-            if not values.get("DEEPSEEK_MODEL") and section.get("model"):
-                values["DEEPSEEK_MODEL"] = str(section.get("model"))
+        def _remember(normalized_key: str, raw: Any, source_path: str) -> None:
+            if values.get(normalized_key):
+                return
+            if raw is None:
+                return
+            text = str(raw).strip()
+            if not text:
+                return
+            values[normalized_key] = text
+            sources[normalized_key] = source_path
 
-        return values
+        def _walk_mapping(node: Any, prefix: str = "") -> None:
+            if not hasattr(node, "items"):
+                return
+
+            current_path = prefix or "root"
+
+            for normalized_key, aliases in top_level_aliases.items():
+                for alias in aliases:
+                    if hasattr(node, "get"):
+                        _remember(normalized_key, node.get(alias, ""), f"{current_path}.{alias}")
+                    if values.get(normalized_key):
+                        break
+
+            if current_path.split(".")[-1].lower() == "deepseek" and hasattr(node, "get"):
+                _remember("DEEPSEEK_API_KEY", node.get("api_key", ""), f"{current_path}.api_key")
+                _remember("DEEPSEEK_BASE_URL", node.get("base_url", ""), f"{current_path}.base_url")
+                _remember("DEEPSEEK_MODEL", node.get("model", ""), f"{current_path}.model")
+
+            for child_key, child_value in node.items():
+                if hasattr(child_value, "items"):
+                    child_path = f"{current_path}.{child_key}" if prefix else str(child_key)
+                    _walk_mapping(child_value, child_path)
+
+        _walk_mapping(st.secrets)
+        return values, sources
     except StreamlitSecretNotFoundError:
-        return {}
+        return {}, {}
     except Exception:
-        return {}
+        return {}, {}
 
 
 def _load_position_strategy_tag():
