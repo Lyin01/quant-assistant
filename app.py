@@ -279,7 +279,7 @@ if page == "总览":
                     except Exception as exc:
                         st.session_state["deepseek_advice_error"] = str(exc)
         else:
-            st.info("未配置 DeepSeek API Key，请先在项目根目录 .env 中填写后再调用。")
+            st.info("未配置 DeepSeek API Key。请在本地项目根目录 .env，或在 Streamlit Cloud 的 Secrets 中填写后再调用。")
 
         if st.session_state.get("deepseek_advice_error"):
             st.error(st.session_state["deepseek_advice_error"])

@@ -316,12 +316,31 @@ def _load_streamlit_secrets() -> dict[str, str]:
         except Exception:  # pragma: no cover - compatibility fallback
             StreamlitSecretNotFoundError = Exception
 
-        keys = ("DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL", "DEEPSEEK_MODEL")
         values: dict[str, str] = {}
-        for key in keys:
-            raw = st.secrets.get(key, "")
-            if raw:
-                values[key] = str(raw)
+
+        top_level_aliases = {
+            "DEEPSEEK_API_KEY": ("DEEPSEEK_API_KEY", "deepseek_api_key"),
+            "DEEPSEEK_BASE_URL": ("DEEPSEEK_BASE_URL", "deepseek_base_url"),
+            "DEEPSEEK_MODEL": ("DEEPSEEK_MODEL", "deepseek_model"),
+        }
+        for normalized_key, aliases in top_level_aliases.items():
+            for alias in aliases:
+                raw = st.secrets.get(alias, "")
+                if raw:
+                    values[normalized_key] = str(raw)
+                    break
+
+        for section_name in ("deepseek", "DEEPSEEK"):
+            section = st.secrets.get(section_name, {})
+            if not hasattr(section, "get"):
+                continue
+            if not values.get("DEEPSEEK_API_KEY") and section.get("api_key"):
+                values["DEEPSEEK_API_KEY"] = str(section.get("api_key"))
+            if not values.get("DEEPSEEK_BASE_URL") and section.get("base_url"):
+                values["DEEPSEEK_BASE_URL"] = str(section.get("base_url"))
+            if not values.get("DEEPSEEK_MODEL") and section.get("model"):
+                values["DEEPSEEK_MODEL"] = str(section.get("model"))
+
         return values
     except StreamlitSecretNotFoundError:
         return {}

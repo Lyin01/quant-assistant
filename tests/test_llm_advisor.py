@@ -35,6 +35,18 @@ def test_load_deepseek_settings_from_env_file(tmp_path, monkeypatch):
     assert settings.model == "deepseek-v4-flash"
 
 
+def test_load_deepseek_settings_prefers_environment(monkeypatch, tmp_path):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "env-key")
+    monkeypatch.setenv("DEEPSEEK_BASE_URL", "https://env.example.com")
+    monkeypatch.setenv("DEEPSEEK_MODEL", "env-model")
+
+    settings = load_deepseek_settings(tmp_path)
+
+    assert settings.api_key == "env-key"
+    assert settings.base_url == "https://env.example.com"
+    assert settings.model == "env-model"
+
+
 def test_build_llm_prompt_contains_core_sections():
     portfolio = {
         "accounts": {
