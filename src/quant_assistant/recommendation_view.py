@@ -105,13 +105,19 @@ def fund_holdings_table(portfolio: dict[str, Any]) -> pd.DataFrame:
     )
 
 
+_CASH_SUMMARY_NAMES = {"可用转账", "可用资金", "可用", "资金", "现金", "可用余额"}
+
+
 def stock_holdings_table(portfolio: dict[str, Any]) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     account = portfolio.get("accounts", {}).get("stock", {})
     for position in account.get("positions", []):
+        name = str(position.get("name", "")).strip()
+        if name in _CASH_SUMMARY_NAMES:
+            continue
         rows.append(
             {
-                "股票/基金": _clean_display_name(position.get("name", "")),
+                "股票/基金": _clean_display_name(name),
                 "市值": position.get("market_value"),
                 "持股": position.get("shares"),
                 "现价": position.get("price"),
