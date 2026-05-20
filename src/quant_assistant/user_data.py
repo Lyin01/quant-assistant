@@ -92,6 +92,7 @@ def _clean_portfolio(data: dict[str, Any]) -> dict[str, Any]:
             if account_key == "stock" and _looks_like_fund_not_stock(name):
                 continue
             pos["name"] = name
+            _reconcile_position_metrics(pos, account_key)
             # Fix negative or zero market_value for fund positions
             mv = pos.get("market_value")
             if account_key == "fund" and mv is not None:
@@ -119,6 +120,46 @@ def _clean_portfolio(data: dict[str, Any]) -> dict[str, Any]:
         if deduped:
             data["accounts"][account_key]["positions"] = deduped
     return data
+
+
+def _reconcile_position_metrics(pos: dict[str, Any], account_key: str) -> None:
+    """Repair obviously corrupted profit percentages from OCR/import noise."""
+    if account_key != "stock":
+        return
+
+    shares = _as_float(pos.get("shares"))
+    cost = _as_float(pos.get("cost"))
+    price = _as_float(pos.get("price"))
+    holding_pnl = _as_float(pos.get("holding_pnl"))
+    reported_pct = _as_float(pos.get("holding_pnl_pct"))
+
+    derived_pct = None
+    if shares and cost and holding_pnl is not None:
+        base_cost = shares * cost
+        if base_cost:
+            derived_pct = holding_pnl / base_cost * 100
+    if derived_pct is None and price and cost:
+        derived_pct = (price / cost - 1) * 100
+
+    if derived_pct is None:
+        return
+    if reported_pct is None:
+        pos["holding_pnl_pct"] = round(derived_pct, 2)
+        return
+
+    pct_gap = abs(reported_pct - derived_pct)
+    sign_conflict = reported_pct * derived_pct < 0
+    if pct_gap > 20 or (sign_conflict and pct_gap > 5):
+        pos["holding_pnl_pct"] = round(derived_pct, 2)
+
+
+def _as_float(value: Any) -> float | None:
+    try:
+        if value is None or value == "":
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _looks_like_fund_not_stock(name: str) -> bool:
