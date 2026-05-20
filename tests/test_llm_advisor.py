@@ -1,13 +1,14 @@
 import importlib
 from pathlib import Path
 
-from quant_assistant.llm_advisor import build_llm_prompt, load_deepseek_settings
+from quant_assistant.llm_advisor import build_llm_prompt, diagnose_config, load_deepseek_settings
 
 
 def test_llm_advisor_module_imports():
     module = importlib.import_module("quant_assistant.llm_advisor")
     assert hasattr(module, "build_llm_context")
     assert hasattr(module, "generate_advice")
+    assert hasattr(module, "diagnose_config")
 
 
 def test_load_deepseek_settings_from_env_file(tmp_path, monkeypatch):
@@ -80,3 +81,32 @@ def test_build_llm_prompt_contains_core_sections():
     assert "易方达中证500" in prompt
     assert "=== 无策略覆盖/配置提示 ===" in prompt
     assert "沃尔核材" in prompt
+
+
+def test_diagnose_config_returns_expected_keys(tmp_path, monkeypatch):
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+
+    env_file = Path(tmp_path) / ".env"
+    env_file.write_text("DEEPSEEK_API_KEY=test-key-12345678\n", encoding="utf-8")
+
+    diag = diagnose_config(tmp_path)
+
+    assert diag["env_file_exists"] is True
+    assert "project_root" in diag
+    assert "sources" in diag
+    assert "env_var" in diag["sources"]
+    assert "streamlit_secrets" in diag["sources"]
+    assert "env_file" in diag["sources"]
+    # .env file should be detected as configured
+    assert "已配置" in diag["sources"]["env_file"]
+    # env var should not be set
+    assert diag["sources"]["env_var"] == "未设置"
+
+
+def test_diagnose_config_no_env_file(tmp_path, monkeypatch):
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+
+    diag = diagnose_config(tmp_path)
+
+    assert diag["env_file_exists"] is False
+    assert diag["sources"]["env_file"] == "未配置或不存在"

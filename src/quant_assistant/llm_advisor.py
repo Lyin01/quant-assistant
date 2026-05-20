@@ -24,6 +24,8 @@ class DeepSeekSettings:
 
 
 def load_deepseek_settings(project_root: str | Path) -> DeepSeekSettings:
+    # Try python-dotenv first for robust .env loading
+    _try_load_dotenv(Path(project_root) / ".env")
     env_values = _load_env_file(Path(project_root) / ".env")
     secret_values = _load_streamlit_secrets()
     api_key = (
@@ -293,6 +295,58 @@ def _format_recommendations(recommendations: list[dict[str, str]]) -> list[str]:
         reason_text = f"：{reason}" if reason else ""
         lines.append(f"- {action} {instrument}{amount_text}{reason_text}")
     return lines
+
+
+def _try_load_dotenv(env_path: Path) -> None:
+    """Attempt to load .env using python-dotenv if available."""
+    if not env_path.exists():
+        return
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(dotenv_path=str(env_path), override=False)
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+
+def diagnose_config(project_root: str | Path) -> dict[str, Any]:
+    """Return diagnostic info about DeepSeek config sources for debugging."""
+    root = Path(project_root)
+    env_path = root / ".env"
+    result: dict[str, Any] = {
+        "project_root": str(root),
+        "env_file_exists": env_path.exists(),
+        "env_file_path": str(env_path),
+        "dotenv_available": False,
+        "sources": {},
+    }
+    try:
+        import dotenv  # noqa: F401
+        result["dotenv_available"] = True
+    except ImportError:
+        pass
+
+    def _mask(key: str) -> str:
+        if not key or len(key) < 8:
+            return "***"
+        return f"{key[:6]}...{key[-4:]}"
+
+    # Check env var
+    env_key = os.getenv("DEEPSEEK_API_KEY", "")
+    result["sources"]["env_var"] = f"已设置 ({_mask(env_key)})" if env_key else "未设置"
+
+    # Check Streamlit secrets
+    secret_values = _load_streamlit_secrets()
+    s_key = secret_values.get("DEEPSEEK_API_KEY", "")
+    result["sources"]["streamlit_secrets"] = f"已配置 ({_mask(s_key)})" if s_key else "未配置"
+
+    # Check .env file
+    env_values = _load_env_file(env_path)
+    f_key = env_values.get("DEEPSEEK_API_KEY", "")
+    result["sources"]["env_file"] = f"已配置 ({_mask(f_key)})" if f_key else "未配置或不存在"
+
+    return result
 
 
 def _load_env_file(path: Path) -> dict[str, str]:

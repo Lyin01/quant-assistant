@@ -13,7 +13,7 @@ import streamlit as st
 
 
 ROOT = Path(__file__).resolve().parent
-PROJECT_ROOT = ROOT if (ROOT / "src").exists() else ROOT.parent
+PROJECT_ROOT = ROOT
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from quant_assistant.analytics import (
@@ -37,7 +37,7 @@ from quant_assistant.data_provider import build_provider, collect_secids, quote_
 from quant_assistant.user_data import get_or_create_portfolio, load_config, save_portfolio, user_history_file
 from quant_assistant.importer import parse_ocr_import_text, update_account_from_import
 from quant_assistant.commodity_chain import chain_summary, fetch_chain_prices, list_chains
-from quant_assistant.llm_advisor import build_llm_prompt, load_deepseek_settings, request_deepseek_advice
+from quant_assistant.llm_advisor import build_llm_prompt, diagnose_config, load_deepseek_settings, request_deepseek_advice
 from quant_assistant.macro_dashboard import fetch_macro_indicators, macro_summary
 from quant_assistant.market_data import fetch_etf_ranking, fetch_history, instrument_options
 from quant_assistant.market_scanner import DEFAULT_SCAN_LIMIT, scan_etfs
@@ -279,7 +279,29 @@ if page == "总览":
                     except Exception as exc:
                         st.session_state["deepseek_advice_error"] = str(exc)
         else:
-            st.info("未配置 DeepSeek API Key。请在本地项目根目录 .env，或在 Streamlit Cloud 的 Secrets 中填写后再调用。")
+            st.warning("未检测到 DeepSeek API Key，LLM 智能建议功能暂不可用。")
+            diag = diagnose_config(PROJECT_ROOT)
+            with st.expander("配置诊断详情", expanded=True):
+                st.write(f"项目根目录：`{diag['project_root']}`")
+                st.write(f".env 文件存在：{'是' if diag['env_file_exists'] else '否'}（`{diag['env_file_path']}`）")
+                st.write(f"python-dotenv 已安装：{'是' if diag['dotenv_available'] else '否'}")
+                for source, status in diag["sources"].items():
+                    label = {"env_var": "系统环境变量", "streamlit_secrets": "Streamlit Secrets", "env_file": ".env 文件"}.get(source, source)
+                    icon = "✅" if "已" in status else "❌"
+                    st.write(f"  {icon} {label}：{status}")
+            st.markdown("""
+            **配置方法（二选一）：**
+
+            1. **本地开发**：在项目根目录创建 `.env` 文件，写入：
+            ```
+            DEEPSEEK_API_KEY=你的API密钥
+            ```
+
+            2. **Streamlit Cloud**：在 [Streamlit Cloud 控制台](https://share.streamlit.io) → App Settings → Secrets 中添加：
+            ```toml
+            DEEPSEEK_API_KEY = "你的API密钥"
+            ```
+            """)
 
         if st.session_state.get("deepseek_advice_error"):
             st.error(st.session_state["deepseek_advice_error"])
