@@ -566,16 +566,9 @@ elif page == "导入持仓":
         key="single_screenshot",
     )
     if image_file:
-        preview_images: list[bytes] = []
-        preview_captions: list[str] = []
-        for uploaded in image_file:
-            image_bytes = uploaded.getvalue()
-            if image_bytes:
-                preview_images.append(image_bytes)
-                preview_captions.append(uploaded.name or "截图预览")
-        if preview_images:
-            st.caption(f"已上传 {len(preview_images)} 张截图")
-            st.image(preview_images, caption=preview_captions, width=280)
+        uploaded_names = [uploaded.name or "未命名截图" for uploaded in image_file if uploaded.size]
+        if uploaded_names:
+            st.caption(f"已上传 {len(uploaded_names)} 张截图：" + "，".join(uploaded_names))
 
     if st.button("识别截图", type="primary", disabled=not image_file):
         if image_file:
