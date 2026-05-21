@@ -225,6 +225,23 @@ def require_auth() -> None:
             render_user_header()
             return
 
-    # 3. Not authenticated — show login
+    # 3. If OAuth is not configured, auto-login as anonymous local user
+    oauth_cfg = _oauth_config()
+    has_provider = any(
+        provider_cfg.get("client_id")
+        for key, provider_cfg in oauth_cfg.items()
+        if isinstance(provider_cfg, dict)
+    )
+    if not has_provider:
+        st.session_state["oauth_user"] = {
+            "provider": "local",
+            "id": "local",
+            "name": "本地用户",
+            "email": "",
+            "avatar": "",
+        }
+        return
+
+    # 4. OAuth configured but not authenticated — show login
     _render_login()
     st.stop()
