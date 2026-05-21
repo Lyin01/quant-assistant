@@ -46,6 +46,13 @@ def test_ocr_import_error_message_for_python_313_plus(monkeypatch):
     assert "3.12" in _ocr_import_error_message()
 
 
+def test_ocr_import_error_message_includes_original_exception(monkeypatch):
+    monkeypatch.setattr("quant_assistant.importer.sys.version_info", (3, 12, 9))
+    message = _ocr_import_error_message(ImportError("libGL.so.1: cannot open shared object file"))
+    assert "原始导入错误" in message
+    assert "libGL.so.1" in message
+
+
 def test_merge_positions_preserves_existing_fields_when_import_is_partial():
     """导入数据缺少某些字段时，应保留现有持仓的对应字段。"""
     existing = [
