@@ -111,14 +111,11 @@ def _get_ocr_engine():
     try:
         from rapidocr_onnxruntime import RapidOCR
         return RapidOCR()
-    except ImportError as exc:
+    except ImportError:
         st.error(
-            f"OCR 引擎未安装（ImportError: {exc}）。\n\n"
-            "requirements.txt 中已包含依赖，请检查 Streamlit Cloud 部署日志。"
+            "OCR 引擎未安装。请运行以下命令安装可选依赖：\n\n"
+            "`pip install -r requirements-ocr.txt`"
         )
-        return None
-    except Exception as exc:
-        st.error(f"OCR 引擎加载失败：{exc}")
         return None
 
 

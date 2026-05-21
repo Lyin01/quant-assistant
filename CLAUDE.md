@@ -10,14 +10,14 @@ Communication with the user should be direct, concrete, and in Chinese unless th
 
 ## Repository And Deployment
 
-- Main repo path: `E:\project from reasonix\Quant assistant`
+- Main repo path: `E:\PROJECT FROM CODEX`
 - GitHub remote: `https://github.com/Lyin01/quant-assistant.git`
 - Branch: `main`
 - Streamlit Cloud URL: `https://lyuiqsvrtmnzxhpxf5ulyo.streamlit.app`
 - Streamlit entrypoint: `app.py`
 - Pushing `main` triggers Streamlit Cloud redeploy.
 
-Do not treat sibling scratch copies such as `portfolio-app/` outside this repo as the deploy root unless the user explicitly redirects you. The deployed repo root is `E:\project from reasonix\Quant assistant`.
+Do not treat `E:\PROJECT FROM CODEX\portfolio-app` as the deploy root unless the user explicitly redirects you. It is a duplicate/older copy. The deployed repo root is `E:\PROJECT FROM CODEX`.
 
 Current Git notes at handoff:
 
@@ -28,13 +28,15 @@ Current Git notes at handoff:
   - `931ce84 Add OCR text position import`
   - `df4605f Add resilient market data fallbacks`
   - `4fec083 Avoid eager Streamlit data loading`
-- Sibling scratch directories such as `.claude/`, `docs/`, `flow/`, and `data/` now live outside this repo after the root migration.
-- Do not stage or revert files outside this repo unless the user explicitly requests it.
+- Known unrelated dirty/untracked items at handoff:
+  - modified `README.md`
+  - untracked `agent-trials/`, `codex-claude-install-tutorial-v3.mp4`, `codex-clawbot-bridge/`, `depcheck-grade-fixture*/`, `portfolio-app/`, `video-projects/`
+- Do not stage or revert unrelated files unless the user explicitly requests it.
 
 ## Runbook
 
 ```powershell
-cd "E:\project from reasonix\Quant assistant"
+cd "E:\PROJECT FROM CODEX"
 python -m pip install -r requirements.txt
 python -m pytest
 streamlit run app.py
@@ -45,7 +47,7 @@ If `python` points to the wrong interpreter on Windows, use `py -m pytest` and `
 Deployment:
 
 ```powershell
-cd "E:\project from reasonix\Quant assistant"
+cd "E:\PROJECT FROM CODEX"
 git status --short
 git add app.py src tests config.json portfolio.json requirements.txt CLAUDE.md DEPLOY.md
 git commit -m "Describe exact change"
@@ -246,7 +248,7 @@ The parser intentionally avoids treating digits embedded in names like `中证50
 Before telling the user something is fixed:
 
 ```powershell
-cd "E:\project from reasonix\Quant assistant"
+cd "E:\PROJECT FROM CODEX"
 python -m pytest
 ```
 
@@ -270,4 +272,4 @@ If pushing, check the deployed app after Streamlit Cloud redeploys.
 - Never ask for or store brokerage passwords, trading passwords, ID numbers, or bank data.
 - Never connect a real trading API unless the user explicitly asks and understands the risks.
 - Never auto-submit orders.
-- Keep all generated project files under `E:\project from reasonix\Quant assistant` unless the user explicitly asks otherwise.
+- Keep all generated project files under `E:\PROJECT FROM CODEX` unless the user explicitly asks otherwise.
