@@ -28,7 +28,7 @@ Quant Assistant 是一个本地/半云端的个人量化复盘助手。它读取
 PowerShell:
 
 ```powershell
-cd "E:\PROJECT FROM CODEX"
+cd "E:\project from reasonix\Quant assistant"
 python -m pip install -r requirements.txt
 $env:PYTHONPATH = Join-Path (Get-Location) "src"
 streamlit run app.py
@@ -45,7 +45,7 @@ py -m streamlit run app.py
 使用本地持仓快照，不请求实时行情：
 
 ```powershell
-cd "E:\PROJECT FROM CODEX"
+cd "E:\project from reasonix\Quant assistant"
 $env:PYTHONPATH = Join-Path (Get-Location) "src"
 python -m quant_assistant.cli --config config.json --portfolio portfolio.json --no-live
 ```
@@ -59,7 +59,7 @@ python -m quant_assistant.cli --config config.json --portfolio portfolio.json --
 ## 测试
 
 ```powershell
-cd "E:\PROJECT FROM CODEX"
+cd "E:\project from reasonix\Quant assistant"
 python -m pytest
 ```
 
@@ -90,7 +90,7 @@ app.py
 - API key 或 OAuth secret
 - 与部署无关的大文件、视频、试验目录
 
-当前工作区里 `agent-trials/`、`portfolio-app/`、`video-projects/`、`depcheck-grade-fixture*/`、`codex-clawbot-bridge/` 和 `*.mp4` 属于本地试验或历史产物，默认不进入部署提交。
+仓库外的同级试验目录、视频和临时产物不属于当前项目根，默认不进入部署提交。
 
 ## 目录说明
 

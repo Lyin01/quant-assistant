@@ -17,16 +17,23 @@ quant-assistant
 PowerShell:
 
 ```powershell
-cd "E:\PROJECT FROM CODEX"
-git init
+cd "E:\project from reasonix\Quant assistant"
+git status --short
 git add .
-git commit -m "Initial quant assistant"
+git commit -m "Describe exact change"
+git push origin main
+```
+
+如果这是第一次初始化的新副本，再额外执行：
+
+```powershell
+git init
 git branch -M main
 git remote add origin https://github.com/<你的GitHub用户名>/quant-assistant.git
 git push -u origin main
 ```
 
-如果你用 GitHub Desktop，也可以直接选择 `E:\PROJECT FROM CODEX` 作为本地仓库，然后 Publish repository。
+如果你用 GitHub Desktop，也可以直接选择 `E:\project from reasonix\Quant assistant` 作为本地仓库，然后 Publish repository。
 
 ## 3. 在 Streamlit Cloud 部署
 
