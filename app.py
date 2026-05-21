@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import sys
 from datetime import date, datetime, timedelta
-from io import BytesIO
 from pathlib import Path
 
 import pandas as pd
@@ -36,7 +35,13 @@ from quant_assistant.daily_brief import assess_quote_freshness, build_daily_cock
 from quant_assistant.data_provider import build_provider, collect_secids, quote_status
 from quant_assistant.user_data import get_or_create_portfolio, load_config, save_portfolio, user_history_file
 try:
-    from quant_assistant.importer import parse_ocr_import_text, update_account_from_import, detect_target_account, split_positions_by_account
+    from quant_assistant.importer import (
+        detect_target_account,
+        ocr_image,
+        parse_ocr_import_text,
+        split_positions_by_account,
+        update_account_from_import,
+    )
 except Exception as _imp_err:
     import traceback
     st.error(f"importer 加载失败: {_imp_err}")
@@ -104,34 +109,6 @@ def cached_history(secid: str, start_text: str, end_text: str, adjust: str) -> t
 @st.cache_data(ttl=900, show_spinner=False)
 def cached_etf_ranking(limit: int) -> tuple[pd.DataFrame, list[str]]:
     return fetch_etf_ranking(limit)
-
-
-@st.cache_resource(show_spinner="正在加载 OCR 引擎...")
-def _get_ocr_engine():
-    try:
-        from rapidocr_onnxruntime import RapidOCR
-        return RapidOCR()
-    except ImportError:
-        st.error(
-            "OCR 引擎未安装。请运行以下命令安装可选依赖：\n\n"
-            "`pip install -r requirements-ocr.txt`"
-        )
-        return None
-
-
-def run_ocr(image_bytes: bytes) -> str:
-    engine = _get_ocr_engine()
-    if engine is None:
-        return ""
-
-    import numpy as np
-    from PIL import Image
-
-    img = Image.open(BytesIO(image_bytes)).convert("RGB")
-    result, _ = engine(np.array(img))
-    if not result:
-        return ""
-    return "\n".join(item[1] for item in result)
 
 
 def reload_portfolio() -> None:
@@ -601,11 +578,19 @@ elif page == "导入持仓":
         if image_file:
             with st.spinner("正在识别截图..."):
                 all_text = []
-                for f in image_file:
-                    text = run_ocr(f.getvalue())
-                    if text:
-                        all_text.append(text)
-                st.session_state["ocr_text_input"] = "\n".join(all_text)
+                try:
+                    for f in image_file:
+                        text = ocr_image(f.getvalue())
+                        if text:
+                            all_text.append(text)
+                    st.session_state["ocr_text_input"] = "\n".join(all_text)
+                except ImportError as exc:
+                    st.error(
+                        f"OCR 引擎未安装（ImportError: {exc}）。\n\n"
+                        "requirements.txt 中已包含依赖，请检查 Streamlit Cloud 部署日志。"
+                    )
+                except Exception as exc:
+                    st.error(f"OCR 识别失败：{exc}")
             for key in ("ocr_import_parsed", "ocr_import_summary", "ocr_import_positions"):
                 st.session_state.pop(key, None)
 

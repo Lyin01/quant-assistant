@@ -1,0 +1,12 @@
+from pathlib import Path
+
+
+def test_main_requirements_include_ocr_runtime():
+    root = Path(__file__).resolve().parents[1]
+    requirements = (root / "requirements.txt").read_text(encoding="utf-8")
+    packages = (root / "packages.txt").read_text(encoding="utf-8")
+
+    assert "opencv-python-headless" in requirements
+    assert "rapidocr-onnxruntime" in requirements
+    assert "libgl1" in packages
+    assert "libglib2.0-0" in packages
