@@ -1,4 +1,5 @@
 from quant_assistant.importer import (
+    _ocr_import_error_message,
     _infer_market_proxy,
     _infer_tag,
     merge_positions,
@@ -37,6 +38,12 @@ def test_infer_tag_defensive():
 def test_infer_tag_unknown_returns_imported():
     assert _infer_tag("沃尔核材") == "imported"
     assert _infer_tag("某个不认识的基金") == "imported"
+
+
+def test_ocr_import_error_message_for_python_313_plus(monkeypatch):
+    monkeypatch.setattr("quant_assistant.importer.sys.version_info", (3, 13, 0))
+    assert "Python 3.13" in _ocr_import_error_message()
+    assert "3.12" in _ocr_import_error_message()
 
 
 def test_merge_positions_preserves_existing_fields_when_import_is_partial():

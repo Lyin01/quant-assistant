@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import sys
 from io import BytesIO
 from typing import Any
 
@@ -826,14 +827,21 @@ def _looks_like_price_cost(source: str) -> bool:
     return any(keyword in source for keyword in ["现价", "成本", "价格"])
 
 
+def _ocr_import_error_message() -> str:
+    if sys.version_info >= (3, 13):
+        return (
+            "当前运行环境是 Python 3.13，RapidOCR 暂不支持该版本。"
+            " 请将 Streamlit Cloud 的 Python 版本切到 3.12，或直接粘贴 OCR 文本导入。"
+        )
+    return "OCR 依赖未安装。请运行: pip install -r requirements-ocr.txt"
+
+
 def ocr_image(image_bytes: bytes) -> str:
     """Run RapidOCR on raw image bytes, return recognized text as a single string."""
     try:
         from rapidocr_onnxruntime import RapidOCR
     except ImportError:
-        raise ImportError(
-            "OCR 依赖未安装。请运行: pip install -r requirements-ocr.txt"
-        )
+        raise ImportError(_ocr_import_error_message())
 
     import numpy as np
     from PIL import Image

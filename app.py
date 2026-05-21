@@ -585,10 +585,7 @@ elif page == "导入持仓":
                             all_text.append(text)
                     st.session_state["ocr_text_input"] = "\n".join(all_text)
                 except ImportError as exc:
-                    st.error(
-                        f"OCR 引擎未安装（ImportError: {exc}）。\n\n"
-                        "requirements.txt 中已包含依赖，请检查 Streamlit Cloud 部署日志。"
-                    )
+                    st.error(str(exc))
                 except Exception as exc:
                     st.error(f"OCR 识别失败：{exc}")
             for key in ("ocr_import_parsed", "ocr_import_summary", "ocr_import_positions"):
