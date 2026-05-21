@@ -377,6 +377,12 @@ def test_parse_fund_screenshot_multiline_ocr():
     ￥ 109.18 05-15
     标普500
     +9.18%
+    天弘中证人工
+    -3.74%
+    +270.49
+    ￥1723.18
+    中证人工智能
+    +18.62%
     广发中证军工E·
     -0.07%
     -124.95
@@ -398,12 +404,13 @@ def test_parse_fund_screenshot_multiline_ocr():
     assert summary["holding_pnl"] is None
     assert list(parsed["name"]) == [
         "易方达中证500",
-        "天弘中证人工",
-        "大成纳斯达克1",
-        "易方达稳健收",
-        "博时标普500E",
-        "广发中证军工E",
-        "华宝纳斯达克",
+        "天弘中证人工智能定投小仓",
+        "大成纳斯达克100",
+        "易方达稳健收益",
+        "博时标普500ETF联接",
+        "天弘中证人工智能大仓",
+        "广发中证军工ETF联接",
+        "华宝纳斯达克精选",
     ]
 
     midcap = next(item for item in positions if item["name"] == "易方达中证500")
@@ -412,6 +419,9 @@ def test_parse_fund_screenshot_multiline_ocr():
     assert midcap["holding_pnl"] == -161.14
     assert midcap["holding_pnl_pct"] == -2.84
     assert midcap["market_proxy"] == "中证500"
+
+    nasdaq = next(item for item in positions if item["name"] == "大成纳斯达克100")
+    assert nasdaq["market_proxy"] == "纳指"
 
 
 def test_update_account_from_import_stock_uses_summary_total_not_mixed_position_sum():

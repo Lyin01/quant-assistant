@@ -680,19 +680,25 @@ def _parse_multiline_fund_rows(lines: list[str]) -> list[dict[str, Any]]:
 
         name = str(_name_from_line(lines[index]))
         group: list[dict[str, Any]] = []
+        group_lines: list[str] = []
         index += 1
         while index < len(lines) and not _is_fund_name_line(lines[index]):
+            group_lines.append(lines[index])
             group.extend(_number_tokens_from_line(lines[index]))
             index += 1
 
-        row = _fund_row_from_tokens(name, group)
+        row = _fund_row_from_tokens(name, group, group_lines)
         if row:
             rows.append(row)
 
     return rows
 
 
-def _fund_row_from_tokens(name: str, tokens: list[dict[str, Any]]) -> dict[str, Any] | None:
+def _fund_row_from_tokens(
+    name: str,
+    tokens: list[dict[str, Any]],
+    context_lines: list[str] | None = None,
+) -> dict[str, Any] | None:
     row = _base_row(name)
     non_percent = [token for token in tokens if not token["is_percent"]]
     percent_values = [token["value"] for token in tokens if token["is_percent"]]
@@ -706,6 +712,16 @@ def _fund_row_from_tokens(name: str, tokens: list[dict[str, Any]]) -> dict[str, 
         return None
 
     row["market_value"] = market_token["value"]
+    row["name"] = _canonicalize_fund_ocr_name(
+        str(row["name"]),
+        context_lines or [],
+        market_value=row["market_value"],
+    )
+    row["tag"] = _infer_tag(str(row["name"]))
+    proxy = _infer_market_proxy(str(row["name"]), str(row["tag"]))
+    if proxy:
+        row["market_proxy"] = proxy
+
     pnl_token = next(
         (
             token
@@ -720,6 +736,31 @@ def _fund_row_from_tokens(name: str, tokens: list[dict[str, Any]]) -> dict[str, 
         row["last_daily_pct"] = percent_values[0]
         row["holding_pnl_pct"] = percent_values[-1]
     return row
+
+
+def _canonicalize_fund_ocr_name(
+    name: str,
+    context_lines: list[str],
+    market_value: float | None = None,
+) -> str:
+    """Recover common fund names truncated by mobile OCR list rows."""
+    context = " ".join(context_lines)
+
+    if name.startswith("大成纳斯达克1") or (name.startswith("大成纳斯达克") and "纳斯达克100" in context):
+        return "大成纳斯达克100"
+    if name.startswith("博时标普500"):
+        return "博时标普500ETF联接"
+    if name.startswith("广发中证军工"):
+        return "广发中证军工ETF联接"
+    if name.startswith("华宝纳斯达克"):
+        return "华宝纳斯达克精选"
+    if name.startswith("易方达稳健收"):
+        return "易方达稳健收益"
+    if name.startswith("天弘中证人工") and "人工智能" in context:
+        if market_value is not None and market_value >= 1000:
+            return "天弘中证人工智能大仓"
+        return "天弘中证人工智能定投小仓"
+    return name
 
 
 def _position_row(name: str, numbers: list[float], source: str) -> dict[str, Any]:
