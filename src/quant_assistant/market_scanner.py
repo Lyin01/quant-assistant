@@ -16,6 +16,45 @@ from .market_data import fetch_history, normalize_history
 DEFAULT_SCAN_LIMIT = 30
 SUMMARY_CACHE_PREFIX = "scanner_summary_v1"
 ETF_LIST_COLUMNS = ["code", "name", "price", "pct", "volume", "amount", "total_mv", "float_mv"]
+FALLBACK_ETF_UNIVERSE = [
+    ("511880", "银华日利ETF"),
+    ("511990", "华宝添益ETF"),
+    ("513310", "中韩半导体ETF华泰柏瑞"),
+    ("510500", "中证500ETF南方"),
+    ("510300", "沪深300ETF华泰柏瑞"),
+    ("588000", "科创50ETF"),
+    ("512100", "中证1000ETF"),
+    ("159915", "创业板ETF"),
+    ("159919", "沪深300ETF"),
+    ("510050", "上证50ETF"),
+    ("512880", "证券ETF"),
+    ("512170", "医疗ETF"),
+    ("512480", "半导体ETF"),
+    ("159819", "人工智能ETF"),
+    ("515790", "光伏ETF"),
+    ("516160", "新能源ETF"),
+    ("159949", "创业板50ETF"),
+    ("159995", "芯片ETF"),
+    ("513500", "标普500ETF"),
+    ("513100", "纳指ETF"),
+    ("159941", "纳指ETF"),
+    ("513180", "恒生科技指数ETF"),
+    ("513130", "恒生科技ETF"),
+    ("159920", "恒生ETF"),
+    ("510880", "红利ETF"),
+    ("515030", "新能源车ETF"),
+    ("512010", "医药ETF"),
+    ("512660", "军工ETF"),
+    ("159928", "消费ETF"),
+    ("512690", "酒ETF"),
+    ("159845", "中证1000ETF"),
+    ("588080", "科创板50ETF"),
+    ("515220", "煤炭ETF"),
+    ("516970", "基建50ETF"),
+    ("159865", "养殖ETF"),
+    ("512800", "银行ETF"),
+    ("512000", "券商ETF"),
+]
 
 
 def _empty_etf_list() -> pd.DataFrame:
@@ -34,6 +73,25 @@ def _normalize_etf_list(frame: pd.DataFrame) -> pd.DataFrame:
     normalized = normalized[(normalized["code"] != "") & (normalized["name"] != "")]
     normalized = normalized.dropna(subset=["code", "name"])
     return normalized[ETF_LIST_COLUMNS]
+
+
+def _fallback_etf_universe() -> pd.DataFrame:
+    rows = []
+    fallback_size = len(FALLBACK_ETF_UNIVERSE)
+    for index, (code, name) in enumerate(FALLBACK_ETF_UNIVERSE):
+        rows.append(
+            {
+                "code": code,
+                "name": name,
+                "price": None,
+                "pct": None,
+                "volume": None,
+                "amount": fallback_size - index,
+                "total_mv": None,
+                "float_mv": None,
+            }
+        )
+    return _normalize_etf_list(pd.DataFrame(rows, columns=ETF_LIST_COLUMNS))
 
 
 def fetch_all_etfs() -> pd.DataFrame:
@@ -295,6 +353,26 @@ def _fetch_tencent_klines(code: str, days: int = 120) -> pd.DataFrame:
     return normalize_history(pd.DataFrame(parsed))
 
 
+def _coerce_price(primary: Any, fallback: Any = None) -> float:
+    for value in (primary, fallback):
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            continue
+        if not pd.isna(number) and number > 0:
+            return number
+    return 1.0
+
+
+def _latest_close(klines: pd.DataFrame) -> float | None:
+    if klines.empty or "close" not in klines.columns:
+        return None
+    close = pd.to_numeric(klines["close"], errors="coerce").dropna()
+    if close.empty:
+        return None
+    return float(close.iloc[-1])
+
+
 def _scan_one(code: str, name: str, price: float, force_refresh: bool = False) -> dict[str, Any] | None:
     cache_key = f"scanner_{code}"
     if not force_refresh:
@@ -324,11 +402,12 @@ def _scan_one(code: str, name: str, price: float, force_refresh: bool = False) -
     if not factors:
         return None
 
-    score = _score(factors, price)
+    scan_price = _coerce_price(price, _latest_close(klines))
+    score = _score(factors, scan_price)
     result = {
         "code": code,
         "name": name,
-        "price": price,
+        "price": scan_price,
         "score": score,
         **factors,
     }
@@ -352,8 +431,8 @@ def scan_etfs(top_n: int = DEFAULT_SCAN_LIMIT, max_workers: int = 6, force_refre
         return pd.DataFrame(), [f"Failed to fetch ETF list: {exc}"]
 
     if etfs.empty:
-        messages.append("ETF list is empty — data source unavailable or returned no rows.")
-        return pd.DataFrame(), messages
+        etfs = _fallback_etf_universe()
+        messages.append(f"ETF list is empty — using fallback universe: {len(etfs)} ETFs.")
     if "amount" not in etfs.columns:
         messages.append("ETF list missing turnover amount, using unsorted source order.")
         etfs = etfs.copy()
