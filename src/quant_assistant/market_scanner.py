@@ -15,6 +15,25 @@ from .market_data import fetch_history, normalize_history
 
 DEFAULT_SCAN_LIMIT = 30
 SUMMARY_CACHE_PREFIX = "scanner_summary_v1"
+ETF_LIST_COLUMNS = ["code", "name", "price", "pct", "volume", "amount", "total_mv", "float_mv"]
+
+
+def _empty_etf_list() -> pd.DataFrame:
+    return pd.DataFrame(columns=ETF_LIST_COLUMNS)
+
+
+def _normalize_etf_list(frame: pd.DataFrame) -> pd.DataFrame:
+    normalized = frame.copy()
+    for column in ETF_LIST_COLUMNS:
+        if column not in normalized.columns:
+            normalized[column] = None
+    for column in ["price", "pct", "volume", "amount", "total_mv", "float_mv"]:
+        normalized[column] = pd.to_numeric(normalized[column], errors="coerce")
+    normalized["code"] = normalized["code"].where(normalized["code"].notna(), "").astype(str).str.strip()
+    normalized["name"] = normalized["name"].where(normalized["name"].notna(), "").astype(str).str.strip()
+    normalized = normalized[(normalized["code"] != "") & (normalized["name"] != "")]
+    normalized = normalized.dropna(subset=["code", "name"])
+    return normalized[ETF_LIST_COLUMNS]
 
 
 def fetch_all_etfs() -> pd.DataFrame:
@@ -57,13 +76,10 @@ def fetch_all_etfs() -> pd.DataFrame:
                     "float_mv": row.get("f21"),
                 }
                 for row in rows
-            ]
+            ],
+            columns=ETF_LIST_COLUMNS,
         )
-        for col in ["price", "pct", "volume", "amount", "total_mv", "float_mv"]:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-        df["code"] = df["code"].astype(str).str.strip()
-        df = df[df["code"] != ""]
-        df = df.dropna(subset=["code", "name"])
+        df = _normalize_etf_list(df)
         if not df.empty:
             return df
     except Exception:
@@ -74,7 +90,7 @@ def fetch_all_etfs() -> pd.DataFrame:
         import akshare as ak
         frame = ak.fund_etf_spot_em()
         if frame is None or frame.empty:
-            return pd.DataFrame()
+            return _empty_etf_list()
         rename = {
             "代码": "code",
             "名称": "name",
@@ -87,13 +103,9 @@ def fetch_all_etfs() -> pd.DataFrame:
         }
         existing = {k: v for k, v in rename.items() if k in frame.columns}
         df = frame.rename(columns=existing)
-        for col in ["price", "pct", "volume", "amount", "total_mv", "float_mv"]:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors="coerce")
-        df = df.dropna(subset=["code", "name"])
-        return df
+        return _normalize_etf_list(df)
     except Exception:
-        return pd.DataFrame()
+        return _empty_etf_list()
 
 
 def _etf_secid(code: str) -> str:
@@ -339,8 +351,16 @@ def scan_etfs(top_n: int = DEFAULT_SCAN_LIMIT, max_workers: int = 6, force_refre
     except Exception as exc:
         return pd.DataFrame(), [f"Failed to fetch ETF list: {exc}"]
 
+    if etfs.empty:
+        messages.append("ETF list is empty — data source unavailable or returned no rows.")
+        return pd.DataFrame(), messages
+    if "amount" not in etfs.columns:
+        messages.append("ETF list missing turnover amount, using unsorted source order.")
+        etfs = etfs.copy()
+        etfs["amount"] = 0
+
     # Sort by turnover amount, take top N
-    etfs = etfs.sort_values("amount", ascending=False).head(top_n).reset_index(drop=True)
+    etfs = etfs.sort_values("amount", ascending=False, na_position="last").head(top_n).reset_index(drop=True)
 
     results: list[dict[str, Any]] = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:

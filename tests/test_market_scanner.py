@@ -24,3 +24,38 @@ def test_scan_etfs_uses_summary_cache_before_fetching_list(monkeypatch):
 
 def test_default_scan_limit_is_small_enough_for_interactive_use():
     assert market_scanner.DEFAULT_SCAN_LIMIT == 30
+
+
+def test_scan_etfs_handles_empty_etf_list(monkeypatch):
+    monkeypatch.setattr(market_scanner, "load_generic_cache", lambda key: None)
+    monkeypatch.setattr(market_scanner, "fetch_all_etfs", lambda: pd.DataFrame())
+
+    frame, messages = market_scanner.scan_etfs()
+
+    assert frame.empty
+    assert any("empty" in message.lower() for message in messages)
+
+
+def test_scan_etfs_handles_missing_amount_column(monkeypatch):
+    monkeypatch.setattr(market_scanner, "load_generic_cache", lambda key: None)
+    monkeypatch.setattr(market_scanner, "save_generic_cache", lambda key, value: None)
+    monkeypatch.setattr(
+        market_scanner,
+        "fetch_all_etfs",
+        lambda: pd.DataFrame([{"code": "159915", "name": "创业板ETF", "price": 2.0}]),
+    )
+    monkeypatch.setattr(
+        market_scanner,
+        "_scan_one",
+        lambda code, name, price, force_refresh=False: {
+            "code": code,
+            "name": name,
+            "price": price,
+            "score": 72.5,
+        },
+    )
+
+    frame, messages = market_scanner.scan_etfs(top_n=1, max_workers=1)
+
+    assert frame.loc[0, "名称"] == "创业板ETF"
+    assert any("missing turnover amount" in message for message in messages)
