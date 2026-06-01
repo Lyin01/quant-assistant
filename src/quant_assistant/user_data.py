@@ -88,8 +88,10 @@ def _clean_portfolio(data: dict[str, Any]) -> dict[str, Any]:
             # Filter garbage names
             if _is_garbage_name(name):
                 continue
-            # In stock account, filter out fund-like entries that don't belong
-            if account_key == "stock" and _looks_like_fund_not_stock(name):
+            # In stock account, only filter fund-like entries when they do not
+            # carry broker position fields. Exchange-traded funds can appear in
+            # stock screenshots with shares/price/cost and must stay visible.
+            if account_key == "stock" and _looks_like_fund_not_stock(name) and not _looks_like_stock_lot(pos):
                 continue
             pos["name"] = name
             _reconcile_position_metrics(pos, account_key)
@@ -177,6 +179,19 @@ def _looks_like_fund_not_stock(name: str) -> bool:
     # Name matches an index pattern without any company context → likely fund holding
     if re.match(r"^(中证|沪深|科创|标普|纳斯达克|纳指|道琼斯)\S{0,6}$", name):
         return True
+    return False
+
+
+def _looks_like_stock_lot(position: dict[str, Any]) -> bool:
+    shares = _as_float(position.get("shares"))
+    if shares is not None and shares > 0:
+        return True
+
+    price = _as_float(position.get("price"))
+    cost = _as_float(position.get("cost"))
+    if price is not None and price > 0 and cost is not None and cost > 0:
+        return True
+
     return False
 
 
