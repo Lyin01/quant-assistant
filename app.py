@@ -743,6 +743,7 @@ elif page == "导入持仓":
                             acct_key,
                             summaries_by_account.get(acct_key),
                             replace_positions=True,
+                            clear_existing_config=True,
                         )
                         portfolio["accounts"][acct_key] = updated_account
 
@@ -795,7 +796,12 @@ elif page == "导入持仓":
 
                     previous_snapshot = dict(target_account)
                     updated_account = update_account_from_import(
-                        target_account, parsed_positions, selected_account, summary, replace_positions=True,
+                        target_account,
+                        parsed_positions,
+                        selected_account,
+                        summary,
+                        replace_positions=True,
+                        clear_existing_config=True,
                     )
                     merged_positions = updated_account["positions"]
                     portfolio["accounts"][selected_account] = updated_account

@@ -946,12 +946,14 @@ def merge_positions(
     imported_positions: list[dict[str, Any]],
     *,
     keep_unmatched: bool = True,
+    preserve_existing_config: bool = True,
 ) -> list[dict[str, Any]]:
     """Merge imported positions into existing ones.
 
     Matching names are updated and keep stable metadata. By default the merge is
     additive, but OCR screenshot imports can pass keep_unmatched=False because a
-    screenshot represents the current full holding snapshot.
+    screenshot represents the current full holding snapshot. When replacing a
+    snapshot, preserve_existing_config=False clears stale strategy bindings.
     """
     imported_by_name: dict[str, dict[str, Any]] = {}
     imported_keys: list[tuple[str, dict[str, Any]]] = []
@@ -977,17 +979,26 @@ def merge_positions(
                     used_imports.add(idx)
                     break
         if imp:
+            prepared_imp = _prepare_imported_position(imp)
             used_imports.add(id(imp))
             updated = dict(existing)
-            for field, value in imp.items():
+            for field, value in prepared_imp.items():
                 if field.startswith("_"):
                     continue
                 if _has_value(value):
                     updated[field] = value
-            for field in ("id", "tag", "market_proxy"):
-                if field in existing and existing[field]:
-                    if not imp.get(field) or imp[field] == "imported":
-                        updated[field] = existing[field]
+            if preserve_existing_config:
+                for field in ("tag", "market_proxy"):
+                    if field in existing and existing[field]:
+                        if not imp.get(field) or imp[field] == "imported":
+                            updated[field] = existing[field]
+            else:
+                for field in ("tag", "market_proxy"):
+                    if not _has_value(imp.get(field)):
+                        updated.pop(field, None)
+            if "id" in existing and existing["id"]:
+                if not imp.get("id") or imp["id"] == "imported":
+                    updated["id"] = existing["id"]
             merged.append(updated)
         else:
             if keep_unmatched:
@@ -996,16 +1007,22 @@ def merge_positions(
     for imp in imported_positions:
         if id(imp) in used_imports:
             continue
-        name = imp.get("name", "")
-        if not imp.get("tag") or imp["tag"] == "imported":
-            imp["tag"] = _infer_tag(name)
-        if not imp.get("market_proxy"):
-            proxy = _infer_market_proxy(name, imp.get("tag", "imported"))
-            if proxy:
-                imp["market_proxy"] = proxy
+        imp = _prepare_imported_position(imp)
         merged.append(imp)
 
     return merged
+
+
+def _prepare_imported_position(position: dict[str, Any]) -> dict[str, Any]:
+    prepared = dict(position)
+    name = prepared.get("name", "")
+    if not prepared.get("tag") or prepared["tag"] == "imported":
+        prepared["tag"] = _infer_tag(name)
+    if not prepared.get("market_proxy"):
+        proxy = _infer_market_proxy(name, prepared.get("tag", "imported"))
+        if proxy:
+            prepared["market_proxy"] = proxy
+    return prepared
 
 
 FUND_HOUSES = (
@@ -1064,13 +1081,17 @@ def update_account_from_import(
     summary: dict[str, Any] | None = None,
     *,
     replace_positions: bool = False,
+    clear_existing_config: bool | None = None,
 ) -> dict[str, Any]:
     """Merge imported positions and refresh account totals for overview display."""
+    if clear_existing_config is None:
+        clear_existing_config = replace_positions
     updated = dict(existing_account)
     updated["positions"] = merge_positions(
         existing_account.get("positions", []),
         imported_positions,
         keep_unmatched=not replace_positions,
+        preserve_existing_config=not clear_existing_config,
     )
     updated = recalc_account_summary(updated, account_key)
     if summary:

@@ -264,7 +264,7 @@ def test_update_account_from_import_recalculates_when_summary_is_missing():
     assert updated["total_assets"] == 3452.5
 
 
-def test_update_account_from_import_replaces_ocr_snapshot_holdings():
+def test_update_account_from_import_replaces_ocr_snapshot_holdings_and_clears_stale_config():
     walter = "\u6c83\u5c14\u6838\u6750"
     robot = "\u673a\u5668\u4eba"
     semiconductor = "\u534a\u5bfc\u4f53"
@@ -308,8 +308,9 @@ def test_update_account_from_import_replaces_ocr_snapshot_holdings():
 
     assert [position["name"] for position in updated["positions"]] == [walter, semiconductor]
     assert updated["positions"][0]["id"] == "walter_old"
-    assert updated["positions"][0]["tag"] == "existing_tag"
-    assert updated["positions"][0]["market_proxy"] == "existing_proxy"
+    assert updated["positions"][0]["tag"] == "imported"
+    assert "market_proxy" not in updated["positions"][0]
+    assert updated["positions"][1]["tag"] == "semiconductor"
     assert updated["total_assets"] == 9260.74
     assert updated["today_pnl"] == 88.30
     assert updated["holding_pnl"] == 98.08
