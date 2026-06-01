@@ -38,6 +38,7 @@ try:
     from quant_assistant.importer import (
         detect_target_account,
         ocr_image,
+        parse_ocr_import_documents,
         parse_ocr_import_text,
         split_positions_by_account,
         update_account_from_import,
@@ -549,6 +550,7 @@ elif page == "回测":
 
 elif page == "导入持仓":
     st.subheader("截图 OCR 导入")
+    ocr_doc_separator = "\n\n--- 截图分隔 ---\n\n"
 
     account_labels = {"auto": "自动识别", "fund": "支付宝基金 (fund)", "stock": "国信证券 (stock)"}
     selected_account = st.radio(
@@ -579,12 +581,20 @@ elif page == "导入持仓":
                         text = ocr_image(f.getvalue())
                         if text:
                             all_text.append(text)
-                    st.session_state["ocr_text_input"] = "\n".join(all_text)
+                    st.session_state["ocr_text_docs"] = all_text
+                    st.session_state["ocr_text_input"] = ocr_doc_separator.join(all_text)
+                    st.session_state["ocr_text_docs_display"] = st.session_state["ocr_text_input"]
                 except ImportError as exc:
                     st.error(str(exc))
                 except Exception as exc:
                     st.error(f"OCR 识别失败：{exc}")
-            for key in ("ocr_import_parsed", "ocr_import_summary", "ocr_import_positions"):
+            for key in (
+                "ocr_import_parsed",
+                "ocr_import_summary",
+                "ocr_import_positions",
+                "ocr_import_summary_by_account",
+                "ocr_import_positions_by_account",
+            ):
                 st.session_state.pop(key, None)
 
     ocr_text = st.text_area(
@@ -596,21 +606,68 @@ elif page == "导入持仓":
 
     if st.button("解析文本", disabled=not str(ocr_text).strip()):
         text = str(ocr_text)
-        parsed, summary, parsed_positions = parse_ocr_import_text(text)
-        detected = detect_target_account(text) if selected_account == "auto" else selected_account
+        stored_docs = st.session_state.get("ocr_text_docs")
+        stored_display = st.session_state.get("ocr_text_docs_display")
+        if isinstance(stored_docs, list) and text == stored_display:
+            documents = stored_docs
+        elif ocr_doc_separator.strip() in text:
+            documents = [part.strip() for part in text.split(ocr_doc_separator) if part.strip()]
+        else:
+            documents = [text]
+
+        if len(documents) > 1:
+            parsed, summaries_by_account, positions_by_account, detected = parse_ocr_import_documents(
+                documents,
+                selected_account,
+            )
+            parsed_positions = [pos for positions in positions_by_account.values() for pos in positions]
+            summary = next(iter(summaries_by_account.values()), {}) if len(summaries_by_account) == 1 else {}
+        else:
+            parsed, summary, parsed_positions = parse_ocr_import_text(text)
+            detected = detect_target_account(text) if selected_account == "auto" else selected_account
+            summaries_by_account = {detected: summary} if detected in {"stock", "fund"} else {}
+            positions_by_account = {}
 
         st.session_state["ocr_import_parsed"] = parsed
         st.session_state["ocr_import_summary"] = summary
         st.session_state["ocr_import_positions"] = parsed_positions
         st.session_state["ocr_import_detected"] = detected
+        st.session_state["ocr_import_summary_by_account"] = summaries_by_account
+        st.session_state["ocr_import_positions_by_account"] = positions_by_account
 
     parsed = st.session_state.get("ocr_import_parsed")
     summary = st.session_state.get("ocr_import_summary")
     parsed_positions = st.session_state.get("ocr_import_positions", [])
     detected = st.session_state.get("ocr_import_detected", selected_account)
+    summaries_by_account = st.session_state.get("ocr_import_summary_by_account", {})
+    positions_by_account = st.session_state.get("ocr_import_positions_by_account", {})
 
     if parsed is not None:
-        if summary:
+        if summaries_by_account and len(summaries_by_account) > 1:
+            summary_labels = {
+                "total_assets": "总资产",
+                "today_pnl": "今日盈亏",
+                "holding_pnl": "持仓盈亏",
+                "market_value": "总市值",
+                "available_cash": "可用资金",
+            }
+            st.caption("账户概览")
+            for acct_key in ("fund", "stock"):
+                account_summary = summaries_by_account.get(acct_key)
+                if not account_summary:
+                    continue
+                summary_display = {
+                    summary_labels.get(k, k): v
+                    for k, v in account_summary.items()
+                    if v is not None
+                }
+                if not summary_display:
+                    continue
+                st.write(f"**{account_labels[acct_key]}**")
+                sum_cols = st.columns(len(summary_display))
+                for col, (label, value) in zip(sum_cols, summary_display.items()):
+                    col.metric(label, f"{value:,.2f}")
+        elif summary:
             summary_labels = {
                 "total_assets": "总资产",
                 "today_pnl": "今日盈亏",
@@ -646,7 +703,11 @@ elif page == "导入持仓":
             from quant_assistant.history import compute_delta
 
             if detected == "mixed" or selected_account == "auto":
-                stock_pos, fund_pos = split_positions_by_account(parsed_positions)
+                if positions_by_account:
+                    stock_pos = positions_by_account.get("stock", [])
+                    fund_pos = positions_by_account.get("fund", [])
+                else:
+                    stock_pos, fund_pos = split_positions_by_account(parsed_positions)
 
                 write_plan = []
                 if stock_pos:
@@ -677,7 +738,10 @@ elif page == "导入持仓":
                         delta = compute_delta(target.get("positions", []), positions)
 
                         updated_account = update_account_from_import(
-                            target, positions, acct_key, summary if acct_key == write_plan[-1][0] else None,
+                            target,
+                            positions,
+                            acct_key,
+                            summaries_by_account.get(acct_key),
                         )
                         portfolio["accounts"][acct_key] = updated_account
 
@@ -693,7 +757,17 @@ elif page == "导入持仓":
                     portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
                     save_portfolio(user, portfolio)
                     reload_portfolio()
-                    for key in ("ocr_import_parsed", "ocr_import_summary", "ocr_import_positions", "ocr_import_detected", "ocr_text_input"):
+                    for key in (
+                        "ocr_import_parsed",
+                        "ocr_import_summary",
+                        "ocr_import_positions",
+                        "ocr_import_detected",
+                        "ocr_import_summary_by_account",
+                        "ocr_import_positions_by_account",
+                        "ocr_text_input",
+                        "ocr_text_docs",
+                        "ocr_text_docs_display",
+                    ):
                         st.session_state.pop(key, None)
                     st.success(f"已写入 {len(write_plan)} 个账户。")
                     st.rerun()
@@ -737,7 +811,17 @@ elif page == "导入持仓":
 
                     save_portfolio(user, portfolio)
                     reload_portfolio()
-                    for key in ("ocr_import_parsed", "ocr_import_summary", "ocr_import_positions", "ocr_import_detected", "ocr_text_input"):
+                    for key in (
+                        "ocr_import_parsed",
+                        "ocr_import_summary",
+                        "ocr_import_positions",
+                        "ocr_import_detected",
+                        "ocr_import_summary_by_account",
+                        "ocr_import_positions_by_account",
+                        "ocr_text_input",
+                        "ocr_text_docs",
+                        "ocr_text_docs_display",
+                    ):
                         st.session_state.pop(key, None)
                     st.success(f"已更新 {account_labels[selected_account]}，共 {len(merged_positions)} 条持仓。")
                     st.rerun()

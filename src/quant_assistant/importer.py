@@ -108,6 +108,51 @@ def parse_ocr_import_text(text: str) -> tuple[pd.DataFrame, dict[str, Any], list
     return parsed, summary, positions
 
 
+def parse_ocr_import_documents(
+    texts: list[str],
+    selected_account: str = "auto",
+) -> tuple[pd.DataFrame, dict[str, dict[str, Any]], dict[str, list[dict[str, Any]]], str]:
+    """Parse one or more OCR documents and keep per-account summaries separate."""
+    frames: list[pd.DataFrame] = []
+    summaries_by_account: dict[str, dict[str, Any]] = {}
+    positions_by_account: dict[str, list[dict[str, Any]]] = {"stock": [], "fund": []}
+
+    for text in [item.strip() for item in texts if str(item).strip()]:
+        parsed, summary, positions = parse_ocr_import_text(text)
+        if not parsed.empty:
+            frames.append(parsed)
+
+        detected = detect_target_account(text) if selected_account == "auto" else selected_account
+        if detected == "mixed":
+            stock_positions, fund_positions = split_positions_by_account(positions)
+            if stock_positions:
+                positions_by_account["stock"].extend(stock_positions)
+            if fund_positions:
+                positions_by_account["fund"].extend(fund_positions)
+            continue
+
+        if detected in positions_by_account:
+            positions_by_account[detected].extend(positions)
+            if any(value is not None for value in summary.values()):
+                summaries_by_account[detected] = summary
+
+    combined = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=PORTFOLIO_COLUMNS)
+    positions_by_account = {key: value for key, value in positions_by_account.items() if value}
+    account_keys = [
+        key
+        for key in ("stock", "fund")
+        if positions_by_account.get(key) or summaries_by_account.get(key)
+    ]
+    if len(account_keys) > 1:
+        detected_account = "mixed"
+    elif len(account_keys) == 1:
+        detected_account = account_keys[0]
+    else:
+        detected_account = selected_account if selected_account in {"stock", "fund"} else "stock"
+
+    return combined, summaries_by_account, positions_by_account, detected_account
+
+
 def detect_target_account(text: str) -> str:
     """Detect whether OCR text is from a stock or fund account.
 
@@ -296,11 +341,8 @@ def _is_summary_name(name: str) -> bool:
 
 def parse_ocr_positions(text: str) -> pd.DataFrame:
     lines = [line.strip() for line in text.splitlines() if line.strip()]
-    screenshot_rows = (
-        _parse_pipe_delimited_rows(lines)
-        or _parse_multiline_stock_rows(lines)
-        or _parse_multiline_fund_rows(lines)
-    )
+    pipe_rows = _parse_pipe_delimited_rows(lines)
+    screenshot_rows = pipe_rows or (_parse_multiline_stock_rows(lines) + _parse_multiline_fund_rows(lines))
     if screenshot_rows:
         return pd.DataFrame(screenshot_rows, columns=PORTFOLIO_COLUMNS)
 

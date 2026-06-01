@@ -3,6 +3,7 @@ from quant_assistant.importer import (
     _infer_market_proxy,
     _infer_tag,
     merge_positions,
+    parse_ocr_import_documents,
     parse_ocr_import_text,
     recalc_account_summary,
     update_account_from_import,
@@ -445,3 +446,172 @@ def test_update_account_from_import_stock_uses_summary_total_not_mixed_position_
     assert updated["total_assets"] == 9703.93
     assert updated["market_value"] == 9000.00
     assert updated["available_cash"] == 703.93
+
+
+def test_parse_combined_stock_and_fund_text_keeps_all_positions():
+    stock_text = """
+    总资产(元)〉
+    今日盈亏>
+    持仓盈亏
+    9,260.74
+    +88.30
+    +98.08
+    总市值
+    可用转账
+    4,404.70
+    4,856.04
+    名称/市值
+    持股/可卖
+    现价/成本
+    持仓盈亏
+    沃尔核材
+    100
+    22.360
+    -64.02
+    2,236.00
+    100
+    23.000
+    -2.78%
+    纳指大成
+    900
+    1.930
+    +184.90
+    1,737.00
+    900
+    1.725
+    +11.91%
+    """
+    fund_text = """
+    账户资产
+    场内穿透
+    18,896.79
+    -123.46
+    当日收益
+    关联板块
+    持有收益
+    广发中证军工E···
+    -1.27%
+    +96.80
+    ￥1248.33
+    中证军工
+    +8.41%
+    易方达中证500··
+    -1.02%
+    -268.04
+    ￥5703.33
+    中证500指数
+    -4.49%
+    """
+
+    parsed, _, positions = parse_ocr_import_text(f"{fund_text}\n{stock_text}")
+
+    names = {position["name"] for position in positions}
+    assert {"沃尔核材", "纳指大成", "广发中证军工ETF联接", "易方达中证500"} <= names
+    assert len(parsed) == 4
+
+
+def test_parse_ocr_import_documents_keeps_account_summaries_separate():
+    stock_text = """
+    总资产(元)〉
+    今日盈亏>
+    持仓盈亏
+    9,260.74
+    +88.30
+    +98.08
+    总市值
+    可用转账
+    4,404.70
+    4,856.04
+    名称/市值
+    持股/可卖
+    现价/成本
+    持仓盈亏
+    沃尔核材
+    100
+    22.360
+    -64.02
+    2,236.00
+    100
+    23.000
+    -2.78%
+    纳指大成
+    900
+    1.930
+    +184.90
+    1,737.00
+    900
+    1.725
+    +11.91%
+    创新药
+    300
+    0.757
+    -20.30
+    227.10
+    300
+    0.825
+    -8.21%
+    半导体
+    100
+    2.046
+    -2.50
+    204.60
+    100
+    2.071
+    -1.21%
+    """
+    fund_text = """
+    账户资产
+    场内穿透
+    18,896.79
+    -123.46
+    当日收益
+    关联板块
+    持有收益
+    广发中证军工E···
+    -1.27%
+    +96.80
+    ￥1248.33
+    中证军工
+    +8.41%
+    大成纳斯达克1··
+    +0.36%
+    +100.86
+    ￥2200.86 05-29
+    纳斯达克100
+    +4.80%
+    易方达中证500··
+    -1.02%
+    -268.04
+    ￥5703.33
+    中证500指数
+    -4.49%
+    天弘中证电网···
+    0.00%
+    +291.30
+    ￥3498.46
+    中证电网设备
+    +9.08%
+    """
+
+    parsed, summaries_by_account, positions_by_account, detected = parse_ocr_import_documents(
+        [fund_text, stock_text],
+        selected_account="auto",
+    )
+
+    assert detected == "mixed"
+    assert len(parsed) == 8
+    assert summaries_by_account["fund"]["total_assets"] == 18896.79
+    assert summaries_by_account["stock"]["total_assets"] == 9260.74
+    assert summaries_by_account["stock"]["available_cash"] == 4856.04
+    assert [position["name"] for position in positions_by_account["stock"]] == [
+        "沃尔核材",
+        "纳指大成",
+        "创新药",
+        "半导体",
+    ]
+    assert [position["name"] for position in positions_by_account["fund"]] == [
+        "广发中证军工ETF联接",
+        "大成纳斯达克100",
+        "易方达中证500",
+        "天弘中证电网",
+    ]
