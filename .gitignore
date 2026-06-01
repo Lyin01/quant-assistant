@@ -10,7 +10,9 @@ __pycache__/
 .Python
 env/
 venv/
+.venv/
 ENV/
+node_modules/
 build/
 develop-eggs/
 dist/
@@ -40,10 +42,27 @@ Thumbs.db
 
 # Project specific
 data/users/
+data/cache/
 reports/
 *.log
 streamlit_test.log
 debug_screenshot.png
+data_source_health.jsonl
+.claude/
+.pytest_cache/
+.pytest-basetemp/
+.streamlit/*.log
 
 # Archives
 archive/
+
+# Independent project buckets kept outside the root app
+active/
+references/
+tools/
+
+# Generated outputs
+**/out/
+**/runs/
+**/.runtime/
+**/__pycache__/

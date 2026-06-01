@@ -77,10 +77,10 @@ if data_issues:
     blockers = schema_blocking_issue_count(data_issues)
     if blockers:
         st.error(f"配置/持仓数据存在 {blockers} 个阻断问题，应用已暂停。")
-        st.dataframe(pd.DataFrame(data_issues), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(data_issues), width="stretch", hide_index=True)
         st.stop()
     with st.expander("配置/持仓校验提示", expanded=False):
-        st.dataframe(pd.DataFrame(data_issues), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(data_issues), width="stretch", hide_index=True)
 
 fund = portfolio["accounts"]["fund"]
 stock = portfolio["accounts"]["stock"]
@@ -212,7 +212,7 @@ if page == "总览":
     if actions.empty:
         st.info("当前没有触发买入、卖出或限价买入动作。")
     else:
-        st.dataframe(actions, use_container_width=True, hide_index=True)
+        st.dataframe(actions, width="stretch", hide_index=True)
         st.download_button(
             "下载今日清单 CSV",
             actions.to_csv(index=False).encode("utf-8-sig"),
@@ -225,7 +225,7 @@ if page == "总览":
         if watchlist.empty:
             st.info("暂无观察项。")
         else:
-            st.dataframe(watchlist, use_container_width=True, hide_index=True)
+            st.dataframe(watchlist, width="stretch", hide_index=True)
 
     fund_holdings = fund_holdings_table(portfolio)
     stock_holdings = stock_holdings_table(portfolio)
@@ -233,13 +233,13 @@ if page == "总览":
     if fund_holdings.empty:
         st.info("当前没有基金持仓数据。")
     else:
-        st.dataframe(fund_holdings, use_container_width=True, hide_index=True)
+        st.dataframe(fund_holdings, width="stretch", hide_index=True)
 
     st.markdown("##### 股票持仓")
     if stock_holdings.empty:
         st.info("当前没有股票持仓数据。")
     else:
-        st.dataframe(stock_holdings, use_container_width=True, hide_index=True)
+        st.dataframe(stock_holdings, width="stretch", hide_index=True)
 
     with st.expander("LLM 智能建议", expanded=False):
         llm_settings = load_deepseek_settings(PROJECT_ROOT)
@@ -337,11 +337,11 @@ if page == "总览":
         watchlist_count=len(watchlist_recs),
         coverage_issue_count=len(coverage_issues),
     )
-    st.dataframe(pd.DataFrame(cockpit_rows), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(cockpit_rows), width="stretch", hide_index=True)
 
     with st.expander(f"策略覆盖检查（{len(coverage_issues)} 条）", expanded=False):
         if coverage_issues:
-            st.dataframe(pd.DataFrame(coverage_issues), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(coverage_issues), width="stretch", hide_index=True)
         else:
             st.info("当前没有检测到明显的策略覆盖缺口。")
 
@@ -463,7 +463,7 @@ elif page == "历史 K 线":
         else:
             enriched = add_indicators(history)
             enriched = add_advanced_indicators(enriched)
-            st.plotly_chart(_kline_figure(enriched, name), use_container_width=True)
+            st.plotly_chart(_kline_figure(enriched, name), width="stretch")
             display_cols = {
                 "date": "日期", "open": "开盘", "high": "最高", "low": "最低",
                 "close": "收盘", "volume": "成交量", "amount": "成交额",
@@ -473,7 +473,7 @@ elif page == "历史 K 线":
                 "high_20": "20日最高", "drawdown_20_pct": "20日回撤%", "drawdown_pct": "最大回撤%",
             }
             display_frame = enriched.rename(columns={k: v for k, v in display_cols.items() if k in enriched.columns})
-            st.dataframe(display_frame.tail(120), use_container_width=True, hide_index=True)
+            st.dataframe(display_frame.tail(120), width="stretch", hide_index=True)
         with st.expander("历史数据源状态", expanded=history.empty):
             for message in friendly_source_messages(messages):
                 st.write(message)
@@ -508,7 +508,7 @@ elif page == "信号 / ETF 排行":
         if ranking.empty:
             st.warning("未获取到 ETF 排行。")
         else:
-            st.dataframe(ranking, use_container_width=True, hide_index=True)
+            st.dataframe(ranking, width="stretch", hide_index=True)
         with st.expander("排行数据源状态", expanded=ranking.empty):
             for message in friendly_source_messages(ranking_messages):
                 st.write(message)
@@ -542,7 +542,7 @@ elif page == "回测":
                 st.info(note)
             st.caption("回测只解释历史样本内表现，不代表未来收益。")
             st.line_chart(bt_curve.set_index("日期")[["策略净值", "持有净值"]])
-            st.dataframe(bt_curve.tail(120), use_container_width=True, hide_index=True)
+            st.dataframe(bt_curve.tail(120), width="stretch", hide_index=True)
         with st.expander("回测数据源状态", expanded=bt_curve.empty):
             for message in friendly_source_messages(bt_messages):
                 st.write(message)
@@ -639,7 +639,7 @@ elif page == "导入持仓":
             }
             st.dataframe(
                 parsed[available].rename(columns=display_labels),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
 
@@ -749,10 +749,10 @@ elif page == "分析":
         col1, col2 = st.columns(2)
         with col1:
             fig = px.pie(dist, values="market_value", names="tag", title="按策略类型")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         with col2:
             fig2 = px.pie(dist, values="market_value", names="account", title="按账户")
-            st.plotly_chart(fig2, use_container_width=True)
+            st.plotly_chart(fig2, width="stretch")
     else:
         st.info("暂无持仓数据。")
 
@@ -768,7 +768,7 @@ elif page == "分析":
                 mode="lines", name="累计收益%"
             ))
             fig.update_layout(title="累计收益走势", yaxis_title="收益率%")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         else:
             st.info("收益数据不足。")
     else:
@@ -794,7 +794,7 @@ elif page == "分析":
             color_continuous_scale="RdYlGn",
             aspect="auto",
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     else:
         st.info("数据不足，无法生成月度收益热力图。")
 
@@ -820,7 +820,7 @@ elif page == "市场扫描":
             st.success(f"扫描完成，综合评分排名前 {len(scan_result)}：")
             display_cols = ["排名", "代码", "名称", "价格", "综合评分", "5日涨幅%", "20日涨幅%", "60日涨幅%", "趋势分(0-3)", "RSI", "20日回撤%", "量比"]
             available_cols = [c for c in display_cols if c in scan_result.columns]
-            st.dataframe(scan_result[available_cols], use_container_width=True, hide_index=True)
+            st.dataframe(scan_result[available_cols], width="stretch", hide_index=True)
         with st.expander("扫描状态"):
             for msg in friendly_source_messages(scan_messages):
                 st.write(msg)
@@ -878,7 +878,7 @@ elif page == "宏观/产业":
         with st.spinner("正在获取价格数据..."):
             chain_prices, chain_messages = fetch_chain_prices(chain_name)
         if chain_prices:
-            st.dataframe(pd.DataFrame(chain_prices), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(chain_prices), width="stretch", hide_index=True)
         else:
             st.info("价格数据暂不可用。")
         with st.expander("价格数据源状态"):
@@ -896,11 +896,11 @@ elif page == "宏观/产业":
         policy_df = news_df[news_df["is_policy"] == True]
         st.caption(f"共 {len(news_df)} 条新闻，其中 {len(policy_df)} 条与关注主题相关")
         if not policy_df.empty:
-            st.dataframe(policy_df[["title", "time", "tags", "source"]].head(20), use_container_width=True, hide_index=True)
+            st.dataframe(policy_df[["title", "time", "tags", "source"]].head(20), width="stretch", hide_index=True)
             trends = summarize_policy_trends(news_df, top_n=10)
             if trends:
                 st.caption("热门政策主题")
-                st.dataframe(pd.DataFrame(trends), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(trends), width="stretch", hide_index=True)
         else:
             st.info("近期暂无匹配的政策新闻。")
     else:

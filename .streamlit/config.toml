@@ -1,9 +1,4 @@
 [server]
-# Keep WebSocket alive for up to 1 hour of idle time.
-# Default Streamlit Cloud timeout is much shorter (~5-15 min),
-# causing frequent re-login for OAuth-based apps.
-timeoutKeepAlive = 3600
-
 # Increase max upload size for portfolio screenshot imports.
 maxUploadSize = 20
 
