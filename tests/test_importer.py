@@ -187,6 +187,41 @@ def test_merge_positions_infers_market_proxy_for_new_holdings():
     assert new_pos["market_proxy"] == "中证500"
 
 
+def test_merge_positions_can_replace_snapshot_and_drop_missing_holdings():
+    walter = "\u6c83\u5c14\u6838\u6750"
+    robot = "\u673a\u5668\u4eba"
+    semiconductor = "\u534a\u5bfc\u4f53"
+    existing = [
+        {
+            "id": "walter_old",
+            "name": walter,
+            "tag": "custom_tag",
+            "market_value": 2000.0,
+            "market_proxy": "custom_proxy",
+        },
+        {
+            "id": "robot_old",
+            "name": robot,
+            "tag": "robot",
+            "market_value": 357.6,
+            "market_proxy": robot,
+        },
+    ]
+    imported = [
+        {"name": walter, "tag": "imported", "market_value": 2236.0, "shares": 100},
+        {"name": semiconductor, "tag": "semiconductor", "market_value": 204.6, "shares": 100},
+    ]
+
+    merged = merge_positions(existing, imported, keep_unmatched=False)
+
+    assert [position["name"] for position in merged] == [walter, semiconductor]
+    walter_position = merged[0]
+    assert walter_position["id"] == "walter_old"
+    assert walter_position["tag"] == "custom_tag"
+    assert walter_position["market_proxy"] == "custom_proxy"
+    assert walter_position["market_value"] == 2236.0
+
+
 def test_update_account_from_import_preserves_ocr_summary_totals():
     """截图摘要总资产比 OCR 明细更权威，不能被明细合计覆盖。"""
     account = {
@@ -227,6 +262,59 @@ def test_update_account_from_import_recalculates_when_summary_is_missing():
 
     assert updated["market_value"] == 2452.5
     assert updated["total_assets"] == 3452.5
+
+
+def test_update_account_from_import_replaces_ocr_snapshot_holdings():
+    walter = "\u6c83\u5c14\u6838\u6750"
+    robot = "\u673a\u5668\u4eba"
+    semiconductor = "\u534a\u5bfc\u4f53"
+    account = {
+        "name": "stock",
+        "total_assets": 9999.0,
+        "today_pnl": 0.0,
+        "holding_pnl": 0.0,
+        "market_value": 2357.6,
+        "available_cash": 0.0,
+        "positions": [
+            {
+                "id": "walter_old",
+                "name": walter,
+                "tag": "existing_tag",
+                "market_value": 2000.0,
+                "market_proxy": "existing_proxy",
+            },
+            {"id": "robot_old", "name": robot, "tag": "robot", "market_value": 357.6},
+        ],
+    }
+    imported = [
+        {"name": walter, "tag": "imported", "market_value": 2236.0, "shares": 100},
+        {"name": semiconductor, "tag": "semiconductor", "market_value": 204.6, "shares": 100},
+    ]
+    summary = {
+        "total_assets": 9260.74,
+        "today_pnl": 88.30,
+        "holding_pnl": 98.08,
+        "market_value": 4404.70,
+        "available_cash": 4856.04,
+    }
+
+    updated = update_account_from_import(
+        account,
+        imported,
+        "stock",
+        summary,
+        replace_positions=True,
+    )
+
+    assert [position["name"] for position in updated["positions"]] == [walter, semiconductor]
+    assert updated["positions"][0]["id"] == "walter_old"
+    assert updated["positions"][0]["tag"] == "existing_tag"
+    assert updated["positions"][0]["market_proxy"] == "existing_proxy"
+    assert updated["total_assets"] == 9260.74
+    assert updated["today_pnl"] == 88.30
+    assert updated["holding_pnl"] == 98.08
+    assert updated["market_value"] == 4404.70
+    assert updated["available_cash"] == 4856.04
 
 
 def test_parse_ocr_import_text_keeps_account_summary_separate_from_positions():

@@ -944,8 +944,15 @@ def ocr_image(image_bytes: bytes) -> str:
 def merge_positions(
     existing_positions: list[dict[str, Any]],
     imported_positions: list[dict[str, Any]],
+    *,
+    keep_unmatched: bool = True,
 ) -> list[dict[str, Any]]:
-    """Merge imported positions into existing ones (additive). Updates matching names, preserves unmatched."""
+    """Merge imported positions into existing ones.
+
+    Matching names are updated and keep stable metadata. By default the merge is
+    additive, but OCR screenshot imports can pass keep_unmatched=False because a
+    screenshot represents the current full holding snapshot.
+    """
     imported_by_name: dict[str, dict[str, Any]] = {}
     imported_keys: list[tuple[str, dict[str, Any]]] = []
     for pos in imported_positions:
@@ -983,7 +990,8 @@ def merge_positions(
                         updated[field] = existing[field]
             merged.append(updated)
         else:
-            merged.append(existing)
+            if keep_unmatched:
+                merged.append(existing)
 
     for imp in imported_positions:
         if id(imp) in used_imports:
@@ -1054,10 +1062,16 @@ def update_account_from_import(
     imported_positions: list[dict[str, Any]],
     account_key: str,
     summary: dict[str, Any] | None = None,
+    *,
+    replace_positions: bool = False,
 ) -> dict[str, Any]:
     """Merge imported positions and refresh account totals for overview display."""
     updated = dict(existing_account)
-    updated["positions"] = merge_positions(existing_account.get("positions", []), imported_positions)
+    updated["positions"] = merge_positions(
+        existing_account.get("positions", []),
+        imported_positions,
+        keep_unmatched=not replace_positions,
+    )
     updated = recalc_account_summary(updated, account_key)
     if summary:
         updated = merge_account_summary(updated, summary)
