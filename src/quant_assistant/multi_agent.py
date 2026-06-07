@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -82,9 +83,12 @@ def _data_agent(
     # Quote coverage
     proxies = config.get("quotes", {}).get("proxies", {})
     needed = set()
-    for account_key, account in portfolio.get("accounts", {}).items():
-        for p in account.get("positions", []):
-            tag = position_strategy_tag(config, p, account_key)
+    accounts = portfolio.get("accounts", {})
+    if not isinstance(accounts, dict):
+        accounts = {}
+    for account_key, account in accounts.items():
+        for p in _positions(account):
+            tag = _safe_position_strategy_tag(config, p, account_key)
             if not strategy_requires_live_quote(tag, account_key):
                 continue
             proxy = p.get("market_proxy")
@@ -125,8 +129,11 @@ def _analysis_agent(
     proxies = config.get("quotes", {}).get("proxies", {})
     from datetime import date, timedelta
 
-    for account in portfolio.get("accounts", {}).values():
-        for p in account.get("positions", []):
+    accounts = portfolio.get("accounts", {})
+    if not isinstance(accounts, dict):
+        accounts = {}
+    for account in accounts.values():
+        for p in _positions(account):
             proxy = p.get("market_proxy")
             if not proxy or proxy not in proxies:
                 continue
@@ -138,11 +145,12 @@ def _analysis_agent(
                 if klines.empty or len(klines) < 20:
                     continue
                 sig = latest_signal(klines)
-                data[f"{p['name']}_signal"] = sig
+                name = str(p.get("name", ""))
+                data[f"{name}_signal"] = sig
                 if sig.get("signal") in ("趋势向上", "低吸观察"):
-                    findings.append(f"{p['name']}: {sig['signal']} ({sig.get('reason', '')})")
+                    findings.append(f"{name}: {sig['signal']} ({sig.get('reason', '')})")
                 elif sig.get("signal") in ("防守观望",):
-                    findings.append(f"{p['name']}: {sig['signal']} — 注意风险")
+                    findings.append(f"{name}: {sig['signal']} — 注意风险")
             except Exception:
                 continue
 
@@ -167,14 +175,48 @@ def _decision_agent(
         findings.append("无触发操作，全部HOLD")
 
     # Cash-aware decision modifier
-    stock = portfolio["accounts"]["stock"]
-    cash = stock.get("available_cash", 0)
+    stock = _account(portfolio, "stock")
+    cash = _number(stock.get("available_cash"))
     if cash < 100 and any(r["action"] == "BUY" for r in actionable):
         findings.append(f"⚠️ 可用现金仅 {cash:.2f} 元，买入建议无法执行")
 
     data = {"actionable_count": len(actionable), "hold_count": len(holds), "recommendations": recs}
     status = "ok" if actionable else "warn"
     return AgentReport(agent="决策Agent", status=status, findings=findings, data=data)
+
+
+def _account(portfolio: dict[str, Any], account_key: str) -> dict[str, Any]:
+    accounts = portfolio.get("accounts", {})
+    if not isinstance(accounts, dict):
+        return {}
+    account = accounts.get(account_key, {})
+    return account if isinstance(account, dict) else {}
+
+
+def _positions(account: Any) -> list[dict[str, Any]]:
+    if not isinstance(account, dict):
+        return []
+    positions = account.get("positions", [])
+    if not isinstance(positions, list):
+        return []
+    return [position for position in positions if isinstance(position, dict)]
+
+
+def _number(value: Any, default: float = 0.0) -> float:
+    if value is None or isinstance(value, bool):
+        return default
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if math.isfinite(parsed) else default
+
+
+def _safe_position_strategy_tag(config: dict[str, Any], position: dict[str, Any], account_key: str) -> str:
+    try:
+        return position_strategy_tag(config, position, account_key)
+    except (TypeError, ValueError):
+        return str(position.get("tag", "unknown") or "unknown")
 
 
 def _risk_agent(
@@ -185,12 +227,11 @@ def _risk_agent(
     findings: list[str] = []
     data: dict[str, Any] = {}
 
-    fund = portfolio["accounts"]["fund"]
-    stock = portfolio["accounts"]["stock"]
-    total = fund.get("total_assets", 0) + stock.get("total_assets", 0)
+    fund = _account(portfolio, "fund")
+    stock = _account(portfolio, "stock")
 
     # Cash stress
-    cash = stock.get("available_cash", 0)
+    cash = _number(stock.get("available_cash"))
     if cash < 100:
         findings.append(f"现金紧张: 股票可用仅 {cash:.2f} 元")
         data["cash_stress"] = True
@@ -198,30 +239,31 @@ def _risk_agent(
         data["cash_stress"] = False
 
     # Concentration
-    stock_positions = stock.get("positions", [])
-    mv_total = stock.get("market_value", 0)
+    stock_positions = _positions(stock)
+    mv_total = _number(stock.get("market_value"))
     if stock_positions and mv_total > 0:
-        top = max(stock_positions, key=lambda p: p.get("market_value", 0))
-        pct = top["market_value"] / mv_total * 100
+        top = max(stock_positions, key=lambda p: _number(p.get("market_value")))
+        top_market_value = _number(top.get("market_value"))
+        pct = top_market_value / mv_total * 100
         data["top_concentration_pct"] = round(pct, 2)
-        data["top_name"] = top["name"]
+        data["top_name"] = str(top.get("name", ""))
         if pct > 50:
-            findings.append(f"高度集中: {top['name']} 占股票市值 {pct:.1f}%")
+            findings.append(f"高度集中: {top.get('name', '')} 占股票市值 {pct:.1f}%")
         elif pct > 30:
-            findings.append(f"仓位集中: {top['name']} 占股票市值 {pct:.1f}%")
+            findings.append(f"仓位集中: {top.get('name', '')} 占股票市值 {pct:.1f}%")
 
     # Uncovered positions
-    uncovered = [p for p in stock_positions if position_strategy_tag(config, p, "stock") == "imported"]
+    uncovered = [p for p in stock_positions if _safe_position_strategy_tag(config, p, "stock") == "imported"]
     if uncovered:
-        names = [p["name"] for p in uncovered]
+        names = [str(p.get("name", "")) for p in uncovered]
         findings.append(f"无策略覆盖: {', '.join(names)}")
         data["uncovered"] = names
 
     # Drawdown check for fund positions
-    for p in fund.get("positions", []):
-        pnl_pct = p.get("holding_pnl_pct", 0)
+    for p in _positions(fund):
+        pnl_pct = _number(p.get("holding_pnl_pct"))
         if pnl_pct <= -10:
-            findings.append(f"深套: {p['name']} 持有收益 {pnl_pct:.2f}%")
+            findings.append(f"深套: {p.get('name', '')} 持有收益 {pnl_pct:.2f}%")
 
     status = "warn" if findings else "ok"
     return AgentReport(agent="风控Agent", status=status, findings=findings, data=data)

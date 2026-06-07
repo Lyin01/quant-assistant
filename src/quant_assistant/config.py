@@ -12,7 +12,9 @@ def load_json(path: str | Path) -> dict[str, Any]:
 
 
 def save_json(path: str | Path, data: dict[str, Any]) -> None:
-    with Path(path).open("w", encoding="utf-8") as file:
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("w", encoding="utf-8") as file:
         json.dump(data, file, ensure_ascii=False, indent=2)
 
 

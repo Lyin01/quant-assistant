@@ -87,11 +87,31 @@ fund = portfolio["accounts"]["fund"]
 stock = portfolio["accounts"]["stock"]
 options = instrument_options(config)
 
+OCR_IMPORT_STATE_KEYS = (
+    "ocr_import_parsed",
+    "ocr_import_summary",
+    "ocr_import_positions",
+    "ocr_import_detected",
+    "ocr_import_summary_by_account",
+    "ocr_import_positions_by_account",
+)
+OCR_TEXT_STATE_KEYS = (
+    "ocr_text_input",
+    "ocr_text_docs",
+    "ocr_text_docs_display",
+)
+OCR_WRITE_NOTICE_KEY = "ocr_import_write_notice"
+
 
 def _current_user_id() -> str:
     provider = user.get("provider", "unknown")
     uid = user.get("id") or user.get("email", "anonymous")
     return f"{provider}_{uid}"
+
+
+def _clear_session_state(keys: tuple[str, ...]) -> None:
+    for key in keys:
+        st.session_state.pop(key, None)
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -549,8 +569,11 @@ elif page == "回测":
                 st.write(message)
 
 elif page == "导入持仓":
-    st.subheader("截图 OCR 导入")
+    st.subheader("截图 / OCR 文本导入")
     ocr_doc_separator = "\n\n--- 截图分隔 ---\n\n"
+    write_notice = st.session_state.get(OCR_WRITE_NOTICE_KEY)
+    if write_notice:
+        st.success(write_notice)
 
     account_labels = {"auto": "自动识别", "fund": "支付宝基金 (fund)", "stock": "国信证券 (stock)"}
     selected_account = st.radio(
@@ -562,7 +585,7 @@ elif page == "导入持仓":
     )
 
     image_file = st.file_uploader(
-        "上传截图 JPG / PNG（支持同时上传基金+股票截图）",
+        "上传截图 JPG / PNG（可选，支持同时上传基金+股票截图）",
         type=["jpg", "jpeg", "png"],
         accept_multiple_files=True,
         key="single_screenshot",
@@ -571,8 +594,20 @@ elif page == "导入持仓":
         uploaded_names = [uploaded.name or "未命名截图" for uploaded in image_file if uploaded.size]
         if uploaded_names:
             st.caption(f"已上传 {len(uploaded_names)} 张截图：" + "，".join(uploaded_names))
+            preview_files = [uploaded for uploaded in image_file if uploaded.size][:4]
+            with st.expander("截图预览", expanded=False):
+                preview_columns = st.columns(2)
+                for index, uploaded in enumerate(preview_files):
+                    with preview_columns[index % 2]:
+                        st.image(
+                            uploaded.getvalue(),
+                            caption=uploaded.name or f"截图 {index + 1}",
+                            width=240,
+                        )
+                if len(uploaded_names) > len(preview_files):
+                    st.caption("仅预览前 4 张截图。")
 
-    if st.button("识别截图", type="primary", disabled=not image_file):
+    if st.button("识别截图生成文本", type="primary", disabled=not image_file):
         if image_file:
             with st.spinner("正在识别截图..."):
                 all_text = []
@@ -584,28 +619,26 @@ elif page == "导入持仓":
                     st.session_state["ocr_text_docs"] = all_text
                     st.session_state["ocr_text_input"] = ocr_doc_separator.join(all_text)
                     st.session_state["ocr_text_docs_display"] = st.session_state["ocr_text_input"]
+                    if not all_text:
+                        st.warning("未从截图中识别到文字，可在下方粘贴手机 OCR 文本后继续解析。")
                 except ImportError as exc:
                     st.error(str(exc))
+                    st.info("可以先用手机或微信 OCR 复制文字，粘贴到下方继续解析。")
                 except Exception as exc:
                     st.error(f"OCR 识别失败：{exc}")
-            for key in (
-                "ocr_import_parsed",
-                "ocr_import_summary",
-                "ocr_import_positions",
-                "ocr_import_summary_by_account",
-                "ocr_import_positions_by_account",
-            ):
-                st.session_state.pop(key, None)
+                    st.info("可以先用手机或微信 OCR 复制文字，粘贴到下方继续解析。")
+            _clear_session_state(OCR_IMPORT_STATE_KEYS + (OCR_WRITE_NOTICE_KEY,))
 
     ocr_text = st.text_area(
-        "OCR 文本",
+        "识别 / 粘贴文本",
         key="ocr_text_input",
         height=260,
-        placeholder="上传截图识别，或直接粘贴手机 OCR 文本。支持同时粘贴基金和股票文本。",
+        placeholder="上传后点“识别截图生成文本”，也可以直接粘贴手机 OCR 文本。支持同时粘贴基金和股票文本。",
     )
 
     if st.button("解析文本", disabled=not str(ocr_text).strip()):
         text = str(ocr_text)
+        _clear_session_state((OCR_WRITE_NOTICE_KEY,))
         stored_docs = st.session_state.get("ocr_text_docs")
         stored_display = st.session_state.get("ocr_text_docs_display")
         if isinstance(stored_docs, list) and text == stored_display:
@@ -759,19 +792,12 @@ elif page == "导入持仓":
                     portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
                     save_portfolio(user, portfolio)
                     reload_portfolio()
-                    for key in (
-                        "ocr_import_parsed",
-                        "ocr_import_summary",
-                        "ocr_import_positions",
-                        "ocr_import_detected",
-                        "ocr_import_summary_by_account",
-                        "ocr_import_positions_by_account",
-                        "ocr_text_input",
-                        "ocr_text_docs",
-                        "ocr_text_docs_display",
-                    ):
-                        st.session_state.pop(key, None)
-                    st.success(f"已写入 {len(write_plan)} 个账户。")
+                    total_positions = sum(len(positions) for _, positions in write_plan)
+                    st.session_state[OCR_WRITE_NOTICE_KEY] = (
+                        f"已写入 {len(write_plan)} 个账户，共 {total_positions} 条持仓。"
+                        "变更记录已更新，可在总览页“持仓变更记录”查看。"
+                    )
+                    _clear_session_state(OCR_IMPORT_STATE_KEYS + OCR_TEXT_STATE_KEYS)
                     st.rerun()
             else:
                 target_account = portfolio["accounts"][selected_account]
@@ -818,19 +844,11 @@ elif page == "导入持仓":
 
                     save_portfolio(user, portfolio)
                     reload_portfolio()
-                    for key in (
-                        "ocr_import_parsed",
-                        "ocr_import_summary",
-                        "ocr_import_positions",
-                        "ocr_import_detected",
-                        "ocr_import_summary_by_account",
-                        "ocr_import_positions_by_account",
-                        "ocr_text_input",
-                        "ocr_text_docs",
-                        "ocr_text_docs_display",
-                    ):
-                        st.session_state.pop(key, None)
-                    st.success(f"已更新 {account_labels[selected_account]}，共 {len(merged_positions)} 条持仓。")
+                    st.session_state[OCR_WRITE_NOTICE_KEY] = (
+                        f"已更新 {account_labels[selected_account]}，共 {len(merged_positions)} 条持仓。"
+                        "变更记录已更新，可在总览页“持仓变更记录”查看。"
+                    )
+                    _clear_session_state(OCR_IMPORT_STATE_KEYS + OCR_TEXT_STATE_KEYS)
                     st.rerun()
 
 elif page == "分析":
@@ -920,8 +938,8 @@ elif page == "宏观/产业":
     st.subheader("全球宏观仪表盘")
     if st.button("刷新宏观数据", type="primary"):
         from quant_assistant.macro_dashboard import MACRO_CACHE_KEY
-        from quant_assistant.disk_cache import save_generic_cache
-        save_generic_cache(MACRO_CACHE_KEY, None)
+        from quant_assistant.disk_cache import clear_generic_cache
+        clear_generic_cache(MACRO_CACHE_KEY)
     with st.spinner("正在获取宏观数据..."):
         macro_data, macro_messages = fetch_macro_indicators()
     if macro_data:
@@ -963,8 +981,8 @@ elif page == "宏观/产业":
         if chain_info:
             st.caption(chain_info["description"])
         if st.button("刷新产业链数据", type="primary"):
-            from quant_assistant.disk_cache import save_generic_cache
-            save_generic_cache(f"chain_{chain_name}", None)
+            from quant_assistant.disk_cache import clear_generic_cache
+            clear_generic_cache(f"chain_{chain_name}")
             st.rerun()
         with st.spinner("正在获取价格数据..."):
             chain_prices, chain_messages = fetch_chain_prices(chain_name)
@@ -979,8 +997,8 @@ elif page == "宏观/产业":
     st.divider()
     st.subheader("政策雷达")
     if st.button("刷新政策新闻"):
-        from quant_assistant.disk_cache import save_generic_cache
-        save_generic_cache("policy_news_50", None)
+        from quant_assistant.disk_cache import clear_generic_cache
+        clear_generic_cache("policy_news_50")
     with st.spinner("正在抓取政策新闻..."):
         news_df, news_messages = fetch_policy_news(limit=50)
     if not news_df.empty:

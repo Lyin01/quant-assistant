@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from .data_provider import Quote, quote_for_proxy
@@ -49,9 +50,9 @@ def position_strategy_tag(
     if "short_term" not in config.get("rules", {}):
         return tag
 
-    shares = int(position.get("shares", 0) or 0)
-    price = float(position.get("price", 0) or 0)
-    cost = float(position.get("cost", 0) or 0)
+    shares = _whole_number(position.get("shares"))
+    price = _number(position.get("price"))
+    cost = _number(position.get("cost"))
     if shares <= 0:
         return tag
     if price <= 0 and cost <= 0:
@@ -63,6 +64,42 @@ def strategy_requires_live_quote(tag: str, account_key: str) -> bool:
     return tag in LIVE_DECISION_TAGS_BY_ACCOUNT.get(account_key, set())
 
 
+def _account(portfolio: dict[str, Any], account_key: str) -> dict[str, Any]:
+    accounts = portfolio.get("accounts", {})
+    if not isinstance(accounts, dict):
+        return {}
+    account = accounts.get(account_key, {})
+    return account if isinstance(account, dict) else {}
+
+
+def _positions(account: Any) -> list[dict[str, Any]]:
+    if not isinstance(account, dict):
+        return []
+    positions = account.get("positions", [])
+    if not isinstance(positions, list):
+        return []
+    return [position for position in positions if isinstance(position, dict)]
+
+
+def _finite_number(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def _number(value: Any, default: float = 0.0) -> float:
+    parsed = _finite_number(value)
+    return default if parsed is None else parsed
+
+
+def _whole_number(value: Any, default: int = 0) -> int:
+    return int(_number(value, float(default)))
+
+
 def _prepend_health_warning(
     recs: list[Recommendation],
     health: dict[str, dict[str, float]] | None,
@@ -72,8 +109,10 @@ def _prepend_health_warning(
         return
     shaky = []
     for provider, stats in health.items():
-        rate = stats.get("success_rate", 100)
-        total = stats.get("total_requests", 0)
+        if not isinstance(stats, dict):
+            continue
+        rate = _number(stats.get("success_rate"), 100.0)
+        total = _number(stats.get("total_requests"))
         if total >= 5 and rate < 80:
             shaky.append(f"{provider} 成功率 {rate:.0f}%")
     if shaky:
@@ -109,30 +148,6 @@ def _prepend_trading_day_notice(
             "reason": "今天不是交易日，且未获取到实时行情，买卖清单仅供参考。",
         })
 
-
-def _prepend_health_warning(
-    recs: list[Recommendation],
-    health: dict[str, dict[str, float]] | None,
-) -> None:
-    """Prepend a global warning if data sources show poor reliability."""
-    if not health:
-        return
-    shaky = []
-    for provider, stats in health.items():
-        rate = stats.get("success_rate", 100)
-        total = stats.get("total_requests", 0)
-        if total >= 5 and rate < 80:
-            shaky.append(f"{provider} 成功率 {rate:.0f}%")
-    if shaky:
-        recs.append({
-            "action": "⚠️",
-            "instrument": "数据源异常",
-            "amount": "",
-            "reason": "以下数据源近期成功率偏低，建议核对行情准确性："
-                       + "；".join(shaky),
-        })
-
-
 def _fund_recommendations(
     config: dict[str, Any],
     portfolio: dict[str, Any],
@@ -140,21 +155,21 @@ def _fund_recommendations(
 ) -> list[Recommendation]:
     rules = config["rules"]
     cash = config["cash_plan"]
-    fund = portfolio["accounts"]["fund"]
-    positions = fund.get("positions", [])
+    fund = _account(portfolio, "fund")
+    positions = _positions(fund)
     recs: list[Recommendation] = []
 
-    actual_cash = float(portfolio.get("accounts", {}).get("stock", {}).get("available_cash", 0) or 0)
-    planned_cash = float(cash.get("available_cash_total", 0) or 0)
+    actual_cash = _number(_account(portfolio, "stock").get("available_cash"))
+    planned_cash = _number(cash.get("available_cash_total"))
     available_cash = max(actual_cash, planned_cash)
-    minimum_cash = float(cash.get("minimum_cash_reserve", 0))
+    minimum_cash = _number(cash.get("minimum_cash_reserve"))
     deployable_cash = max(0, available_cash - minimum_cash)
 
     for position in positions:
         tag = position_strategy_tag(config, position, "fund")
-        name = position["name"]
+        name = str(position.get("name", ""))
         daily_pct = _daily_pct(config, quotes, position)
-        profit_pct = float(position.get("holding_pnl_pct", 0))
+        profit_pct = _number(position.get("holding_pnl_pct"))
         warn = _data_warning(config, quotes, position, "fund", tag)
 
         # Built-in logic per tag — no template layer, config.json only has thresholds
@@ -218,7 +233,7 @@ def _fund_recommendations(
         candidate_pct = _daily_pct(config, quotes, candidate)
         if candidate_pct <= wide_rule["daily_pct_max_for_buy"]:
             amount = wide_rule["strong_buy_amount"] if candidate_pct <= wide_rule["daily_pct_strong_buy"] else wide_rule["normal_buy_amount"]
-            recs.insert(0, _buy_money(candidate["name"], amount, f"现金较多，宽基参考涨跌 {candidate_pct:.2f}%，允许回补底仓。"))
+            recs.insert(0, _buy_money(str(candidate.get("name", "")), amount, f"现金较多，宽基参考涨跌 {candidate_pct:.2f}%，允许回补底仓。"))
 
     return recs
 
@@ -229,14 +244,14 @@ def _stock_recommendations(
     quotes: dict[str, Quote],
 ) -> list[Recommendation]:
     rules = config["rules"]
-    stock = portfolio["accounts"]["stock"]
+    stock = _account(portfolio, "stock")
     recs: list[Recommendation] = []
 
-    for position in stock.get("positions", []):
+    for position in _positions(stock):
         tag = position_strategy_tag(config, position, "stock")
-        name = position["name"]
+        name = str(position.get("name", ""))
         price = _price(config, quotes, position)
-        shares = int(position.get("shares", 0))
+        shares = _whole_number(position.get("shares"))
         profit_pct = _profit_pct(config, quotes, position)
         warn = _data_warning(config, quotes, position, "stock", tag)
 
@@ -290,7 +305,7 @@ def _stock_recommendations(
                 recs.append(_hold(name, f"海外持仓收益 {profit_pct:.2f}%，继续持有。 {warn}" if warn else f"海外持仓收益 {profit_pct:.2f}%，继续持有。"))
 
         else:
-            market_value = float(position.get("market_value", 0) or 0)
+            market_value = _number(position.get("market_value"))
             if market_value >= 500:
                 recs.append(_hold(name, f"当前无对应策略规则（tag={tag}），持仓市值 {market_value:.0f} 元，请考虑补充策略配置。 {warn}" if warn else f"当前无对应策略规则（tag={tag}），持仓市值 {market_value:.0f} 元，请考虑补充策略配置。"))
             else:
@@ -302,12 +317,12 @@ def _stock_recommendations(
 def _daily_pct(config: dict[str, Any], quotes: dict[str, Quote], position: dict[str, Any]) -> float:
     use_live = bool(config.get("market_provider", {}).get("use_live_proxy_for_decisions", False))
     if not use_live:
-        return float(position.get("last_daily_pct", 0))
+        return _number(position.get("last_daily_pct"))
 
     quote = quote_for_proxy(position.get("market_proxy"), config, quotes)
     if quote and quote.pct is not None:
-        return float(quote.pct)
-    return float(position.get("last_daily_pct", 0))
+        return _number(quote.pct)
+    return _number(position.get("last_daily_pct"))
 
 
 def _price(config: dict[str, Any], quotes: dict[str, Quote], position: dict[str, Any]) -> float:
@@ -315,21 +330,18 @@ def _price(config: dict[str, Any], quotes: dict[str, Quote], position: dict[str,
     if use_live:
         quote = quote_for_proxy(position.get("market_proxy"), config, quotes)
         if quote and quote.price is not None:
-            return float(quote.price)
-    return float(position.get("price", 0))
+            return _number(quote.price)
+    return _number(position.get("price"))
 
 
 def _profit_pct(config: dict[str, Any], quotes: dict[str, Quote], position: dict[str, Any]) -> float:
     # Prefer broker-provided holding_pnl_pct — it includes dividends and fees.
-    broker_pnl = position.get("holding_pnl_pct")
+    broker_pnl = _finite_number(position.get("holding_pnl_pct"))
     if broker_pnl is not None:
-        try:
-            return float(broker_pnl)
-        except (TypeError, ValueError):
-            pass
+        return broker_pnl
     # Fallback: estimate from price/cost (ignores dividends but better than nothing).
     price = _price(config, quotes, position)
-    cost = float(position.get("cost", 0) or 0)
+    cost = _number(position.get("cost"))
     if price > 0 and cost > 0:
         return (price / cost - 1) * 100
     return 0.0

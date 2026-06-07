@@ -132,6 +132,32 @@ def test_strategy_coverage_ignores_imported_tag():
     assert len(issues) == 0
 
 
+def test_strategy_coverage_accepts_core_ai_dca_builtin_tag():
+    config = {
+        "rules": {},
+        "strategy_bindings": {},
+        "quotes": {"proxies": {"人工智能": "1.515070"}},
+    }
+    portfolio = {
+        "accounts": {
+            "fund": {
+                "positions": [
+                    {
+                        "name": "天弘中证人工智能定投小仓",
+                        "tag": "core_ai_dca",
+                        "market_value": 452.81,
+                        "market_proxy": "人工智能",
+                    },
+                ]
+            }
+        }
+    }
+
+    issues = strategy_coverage_issues(config, portfolio)
+
+    assert issues == []
+
+
 def test_strategy_coverage_flags_missing_market_proxy_for_live_rule():
     config = {
         "rules": {"healthcare": {}},

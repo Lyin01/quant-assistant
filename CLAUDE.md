@@ -37,24 +37,25 @@ Current Git notes at handoff:
 
 ```powershell
 cd "E:\PROJECT FROM CODEX"
-python -m pip install -r requirements.txt
-python -m pytest
-streamlit run app.py
+py -m pip install -r requirements.txt
+.\scripts\verify_quant_assistant.ps1
+py -m streamlit run app.py
 ```
 
-If `python` points to the wrong interpreter on Windows, use `py -m pytest` and `py -m streamlit run app.py`.
+On this Windows workspace, prefer the `py` launcher. The bare `python` command may point to the Codex/Hermes environment, which can lack project dependencies.
 
 Deployment:
 
 ```powershell
 cd "E:\PROJECT FROM CODEX"
 git status --short
-git add app.py src tests config.json portfolio.json requirements.txt CLAUDE.md DEPLOY.md
+# Add only the files intentionally changed for this task.
+# For the 2026-06-05 handoff set, see reports/change_set_audit_2026-06-05.md.
 git commit -m "Describe exact change"
 git push origin main
 ```
 
-Be selective with `git add`. This workspace contains unrelated files.
+Be selective with `git add`. This workspace contains unrelated files and user data snapshots. For the 2026-06-05 final-day change set, use `reports/change_set_audit_2026-06-05.md` instead of broad pathspecs such as `src`, `tests`, or `portfolio.json`.
 
 ## Product State
 
@@ -75,11 +76,11 @@ The app is a Streamlit application with these pages:
   - MA trend backtest.
 - `导入持仓`
   - CSV/Excel import with column mapping.
-  - Screenshot preview.
+  - Uploaded screenshot OCR through RapidOCR when dependencies are available.
   - OCR text paste parser for stock/fund screenshots.
   - Manual fallback input.
 
-Important: the current screenshot feature does not perform real image OCR. It previews the uploaded image and parses text pasted by the user after phone/WeChat OCR. If the user expects direct image recognition, that is a pending feature.
+Important: screenshot import now has two paths. It can run RapidOCR on uploaded JPG/PNG screenshots when the OCR dependencies are installed and Python is below 3.13, and it can also parse pasted phone/WeChat OCR text. Keep the paste-text fallback visible because image OCR can still fail or be unavailable in deployment.
 
 ## Core Files
 
@@ -93,7 +94,7 @@ Important: the current screenshot feature does not perform real image OCR. It pr
   - `market_provider.use_live_proxy_for_decisions` is currently `true`.
 - `portfolio.json`
   - User portfolio snapshot.
-  - May be stale relative to latest screenshots; see "Latest User Data".
+  - Current root snapshot observed on 2026-06-05 shows `as_of: 2026-05-19 12:53`, which is later than the 2026-05-15 screenshot notes below. Do not overwrite it with older screenshot data unless the user explicitly confirms that rollback.
 - `requirements.txt`
   - `streamlit`, `akshare`, `pandas`, `plotly`, `openpyxl`.
 - `src\quant_assistant\strategy.py`
@@ -146,7 +147,7 @@ These rules are encoded in `config.json` and `strategy.py`.
 
 ## Latest User Data From 2026-05-15 Screenshots
 
-The user uploaded fresher screenshots after the current `portfolio.json` snapshot. If you are updating the portfolio, use this as the canonical latest visible data.
+Historical handoff note: these screenshots were fresher than the portfolio snapshot at the time they were recorded. In the current worktree observed on 2026-06-05, root `portfolio.json` is already `as_of: 2026-05-19 12:53`, so the 2026-05-15 screenshots should be treated as archival reference unless the user explicitly asks to restore or compare against them.
 
 Stock account screenshot, 国信证券:
 
@@ -178,7 +179,7 @@ Fund account screenshot, 支付宝:
 天弘中证电网设备 | 3270.40 | -3.24% | +363.23 | +12.49%
 ```
 
-Note that `portfolio.json` at handoff still shows `as_of: 2026-05-13 10:55` and older values. Updating it from the latest screenshots is a likely next task.
+Earlier handoff note: at that time `portfolio.json` showed `as_of: 2026-05-13 10:55` and older values. This is no longer true in the current worktree; do not use this note as a reason to overwrite the 2026-05-19 snapshot.
 
 ## Current Screenshot Import Parser Behavior
 
@@ -224,24 +225,25 @@ The parser intentionally avoids treating digits embedded in names like `中证50
 
 ## Known Issues / Next Best Tasks
 
-1. Add real image OCR only if you can keep Streamlit Cloud stable.
-   - Current implementation is text-paste OCR parsing, not image OCR.
-   - Heavy OCR packages may break Streamlit Cloud cold start or dependency install.
-   - A pragmatic path is optional OCR behind a dependency guard, while preserving paste-text fallback.
-2. Update `portfolio.json` from the 2026-05-15 latest screenshots.
-   - Do not overwrite tags/rules casually.
-   - Add new stock positions such as `沃尔核材` and `纳指大成` with reasonable tags, or mark as `imported` if no strategy rule exists.
+1. Keep screenshot OCR deploy-stable.
+   - Real image OCR is wired through RapidOCR, but it depends on runtime packages and Python version support.
+   - Preserve the paste-text fallback and clear failure messages.
+   - Do not add heavier OCR dependencies unless Streamlit Cloud install and cold start are verified.
+2. Do not overwrite `portfolio.json` with the 2026-05-15 screenshot data without confirmation.
+   - Current root snapshot observed on 2026-06-05 is `as_of: 2026-05-19 12:53`.
+   - Snapshot comparison is documented in `reports/portfolio_snapshot_audit_2026-06-05.md`.
 3. Improve "导入持仓" UX.
-   - Make it explicit whether the app is doing image OCR or only parsing pasted OCR text.
-   - Keep screenshot preview small.
-   - Ensure form submit visibly changes output.
+   - The page now labels the image OCR and pasted-text paths more clearly.
+   - Uploaded screenshots now have a small collapsed preview before OCR.
+   - OCR import writes now persist a post-rerun success notice that points users to the change history.
 4. Verify live quote display on Streamlit Cloud.
    - AkShare can fail depending on network/provider behavior.
    - Auto fallback currently tries AkShare, EastMoney, Tencent.
    - If live data fails, inspect `行情源状态`.
-5. Expand strategy coverage for newly visible holdings.
-   - `沃尔核材`, `纳指大成`, `创新药`, overseas funds currently do not all have dedicated rules.
-   - Avoid inventing aggressive trading rules without the user's consent.
+5. Strategy coverage is currently clean, but some coverage is generic.
+   - Current strategy coverage audit is documented in `reports/strategy_coverage_audit_2026-06-05.md`.
+   - `沃尔核材` and `通宇通讯` are stored as `imported` but route through the generic `short_term` stock rule.
+   - Avoid inventing dedicated aggressive trading rules without the user's consent.
 
 ## Testing Expectations
 
@@ -249,13 +251,13 @@ Before telling the user something is fixed:
 
 ```powershell
 cd "E:\PROJECT FROM CODEX"
-python -m pytest
+.\scripts\verify_quant_assistant.ps1
 ```
 
 If changing Streamlit UI, also run locally:
 
 ```powershell
-streamlit run app.py
+py -m streamlit run app.py
 ```
 
 If pushing, check the deployed app after Streamlit Cloud redeploys.

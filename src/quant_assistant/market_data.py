@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import urllib.parse
 import urllib.request
 from datetime import date
@@ -9,6 +10,9 @@ from typing import Any
 import pandas as pd
 
 from .disk_cache import load_cached, save_cached
+
+
+AKSHARE_MARKET_DATA_ENABLED_ENV = "QA_ENABLE_AKSHARE_MARKET_DATA"
 
 
 def instrument_options(config: dict[str, Any]) -> dict[str, str]:
@@ -44,7 +48,21 @@ def fetch_history(
     except Exception as exc:
         messages.append(f"EastMoney history failed for {secid}: {exc}")
 
-    # Fallback to AkShare
+    try:
+        frame = _fetch_tencent_history(secid, start, end, adjust)
+    except Exception as exc:
+        messages.append(f"Tencent history fallback failed for {secid}: {exc}")
+    else:
+        messages.append(f"Tencent history fallback: {secid}, {len(frame)} rows.")
+        if not frame.empty:
+            save_cached(secid, start_iso, end_iso, adjust, frame)
+            return frame, messages
+
+    # Fallback to AkShare only when explicitly enabled.
+    if not _akshare_market_data_enabled():
+        messages.append(f"AkShare market data disabled; set {AKSHARE_MARKET_DATA_ENABLED_ENV}=1 to enable.")
+        return pd.DataFrame(), messages
+
     try:
         import akshare as ak
     except Exception as exc:
@@ -113,6 +131,10 @@ def fetch_etf_ranking(limit: int = 30) -> tuple[pd.DataFrame, list[str]]:
 
 
 def _akshare_etf_ranking_or_empty(limit: int, messages: list[str]) -> tuple[pd.DataFrame, list[str]]:
+    if not _akshare_market_data_enabled():
+        messages.append(f"AkShare market data disabled; set {AKSHARE_MARKET_DATA_ENABLED_ENV}=1 to enable.")
+        return pd.DataFrame(), messages
+
     try:
         import akshare as ak
     except Exception as exc:
@@ -146,6 +168,11 @@ def _akshare_etf_ranking_or_empty(limit: int, messages: list[str]) -> tuple[pd.D
         ranking = ranking.sort_values("pct", ascending=False)
     messages.append(f"AkShare ETF ranking: {len(ranking)} rows.")
     return ranking.head(limit).reset_index(drop=True), messages
+
+
+def _akshare_market_data_enabled() -> bool:
+    value = os.environ.get(AKSHARE_MARKET_DATA_ENABLED_ENV, "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def normalize_history(frame: pd.DataFrame) -> pd.DataFrame:

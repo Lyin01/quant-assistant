@@ -21,7 +21,7 @@ def detect_target_account(
         return "stock"
     if preset == "基金截图":
         return "fund"
-    if any(_has_value(position.get("shares")) for position in positions):
+    if any(_is_positive_number(position.get("shares")) for position in positions):
         return "stock"
     return "fund"
 
@@ -48,19 +48,20 @@ def import_review_issues(
         name = str(position.get("name", "")).strip() or "-"
         tag = str(position.get("tag", "")).strip()
 
-        if not _has_value(position.get("market_value")) or float(position.get("market_value") or 0) <= 0:
+        market_value = _to_float(position.get("market_value"))
+        if market_value is None or market_value <= 0:
             # 降级为提示：截图 OCR 可能漏识别数字，或用户只想更新部分字段（如股数、成本）
             issues.append(_issue("提示", name, "缺少市值", "补充 market_value 后数据更完整；如只更新其他字段可忽略。"))
 
-        if not _has_value(position.get("holding_pnl_pct")):
+        if _to_float(position.get("holding_pnl_pct")) is None:
             issues.append(_issue("提示", name, "缺少持有收益率", "补充 holding_pnl_pct 后建议会更准确。"))
 
         if account == "stock":
-            if not _has_value(position.get("shares")):
+            if not _is_positive_number(position.get("shares")):
                 issues.append(_issue("提示", name, "股票持仓缺少股数", "补充 shares，方便生成按股数操作的建议。"))
-            if not _has_value(position.get("price")):
+            if not _is_positive_number(position.get("price")):
                 issues.append(_issue("提示", name, "股票持仓缺少现价", "补充 price，或依赖 market_proxy 实时行情。"))
-            if not _has_value(position.get("cost")):
+            if not _is_positive_number(position.get("cost")):
                 issues.append(_issue("提示", name, "股票持仓缺少成本", "补充 cost，方便计算持仓收益率。"))
 
         if name not in existing_names and (not tag or tag == "imported"):
@@ -102,6 +103,28 @@ def _has_value(value: Any) -> bool:
     if isinstance(value, str) and not value.strip():
         return False
     return True
+
+
+def _to_float(value: Any) -> float | None:
+    if not _has_value(value):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    try:
+        import pandas as pd
+
+        if pd.isna(parsed):
+            return None
+    except Exception:
+        pass
+    return parsed
+
+
+def _is_positive_number(value: Any) -> bool:
+    number = _to_float(value)
+    return number is not None and number > 0
 
 
 def _issue(level: str, instrument: str, problem: str, suggestion: str) -> dict[str, str]:

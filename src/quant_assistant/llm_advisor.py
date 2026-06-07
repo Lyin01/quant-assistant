@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -60,30 +61,32 @@ def build_llm_context(
     fund = portfolio["accounts"]["fund"]
     stock = portfolio["accounts"]["stock"]
 
-    fund_positions = fund.get("positions", [])
-    stock_positions = stock.get("positions", [])
-    total_assets = float(fund.get("total_assets", 0) or 0) + float(stock.get("total_assets", 0) or 0)
-    stock_mv = float(stock.get("market_value", 0) or 0)
-    stock_cash = float(stock.get("available_cash", 0) or 0)
+    fund_positions = [position for position in fund.get("positions", []) if isinstance(position, dict)]
+    stock_positions = [position for position in stock.get("positions", []) if isinstance(position, dict)]
+    total_assets = _number(fund.get("total_assets")) + _number(stock.get("total_assets"))
+    stock_mv = _number(stock.get("market_value"))
+    stock_cash = _number(stock.get("available_cash"))
 
-    stock_by_mv = sorted(stock_positions, key=lambda p: float(p.get("market_value", 0) or 0), reverse=True)
+    stock_by_mv = sorted(stock_positions, key=lambda p: _number(p.get("market_value")), reverse=True)
     top_stock = stock_by_mv[0] if stock_by_mv else None
-    concentration_pct = (float(top_stock.get("market_value", 0) or 0) / stock_mv * 100) if top_stock and stock_mv else 0
+    top_market_value = _number(top_stock.get("market_value")) if top_stock else 0.0
+    concentration_pct = (top_market_value / stock_mv * 100) if top_stock and stock_mv else 0
 
-    uncovered_positions = [
-        {
+    uncovered_positions = []
+    for position in stock_positions:
+        tag = _safe_position_strategy_tag(position_strategy_tag, config, position, "stock")
+        if tag != "imported":
+            continue
+        uncovered_positions.append({
             "account": "stock",
-            "name": position["name"],
-            "tag": position_strategy_tag(config, position, "stock") or position.get("tag", "unknown"),
-            "market_value": float(position.get("market_value", 0) or 0),
-            "holding_pnl_pct": float(position.get("holding_pnl_pct", 0) or 0),
-            "shares": int(position.get("shares", 0) or 0),
-            "price": float(position.get("price", 0) or 0),
-            "cost": float(position.get("cost", 0) or 0),
-        }
-        for position in stock_positions
-        if position_strategy_tag(config, position, "stock") == "imported"
-    ]
+            "name": str(position.get("name", "")),
+            "tag": tag or position.get("tag", "unknown"),
+            "market_value": _number(position.get("market_value")),
+            "holding_pnl_pct": _number(position.get("holding_pnl_pct")),
+            "shares": _whole_number(position.get("shares")),
+            "price": _number(position.get("price")),
+            "cost": _number(position.get("cost")),
+        })
 
     rec_groups = {
         "sell": [rec for rec in recommendations if rec.get("action") == "SELL"],
@@ -104,21 +107,21 @@ def build_llm_context(
     return {
         "total_assets": round(total_assets, 2),
         "fund": {
-            "total_assets": round(float(fund.get("total_assets", 0) or 0), 2),
-            "today_pnl": round(float(fund.get("today_pnl", 0) or 0), 2),
+            "total_assets": round(_number(fund.get("total_assets")), 2),
+            "today_pnl": round(_number(fund.get("today_pnl")), 2),
             "position_count": len(fund_positions),
         },
         "stock": {
-            "total_assets": round(float(stock.get("total_assets", 0) or 0), 2),
+            "total_assets": round(_number(stock.get("total_assets")), 2),
             "market_value": round(stock_mv, 2),
             "available_cash": round(stock_cash, 2),
-            "today_pnl": round(float(stock.get("today_pnl", 0) or 0), 2),
-            "holding_pnl": round(float(stock.get("holding_pnl", 0) or 0), 2),
+            "today_pnl": round(_number(stock.get("today_pnl")), 2),
+            "holding_pnl": round(_number(stock.get("holding_pnl")), 2),
             "position_count": len(stock_positions),
         },
         "concentration": {
-            "top_name": top_stock["name"] if top_stock else None,
-            "top_market_value": float(top_stock.get("market_value", 0) or 0) if top_stock else 0,
+            "top_name": top_stock.get("name") if top_stock else None,
+            "top_market_value": top_market_value,
             "concentration_pct": round(concentration_pct, 2),
         },
         "cash_stress": stock_cash < 100,
@@ -169,11 +172,11 @@ def build_llm_prompt(
         "5. 输出尽量简洁，适合直接阅读，不要复述全部原始数据。",
         "",
         "=== 账户概况 ===",
-        f"- 基金资产：{float(fund.get('total_assets', 0) or 0):.2f}",
-        f"- 基金今日盈亏：{float(fund.get('today_pnl', 0) or 0):.2f}",
-        f"- 股票资产：{float(stock.get('total_assets', 0) or 0):.2f}",
-        f"- 股票今日盈亏：{float(stock.get('today_pnl', 0) or 0):.2f}",
-        f"- 股票可用现金：{float(stock.get('available_cash', 0) or 0):.2f}",
+        f"- 基金资产：{_number(fund.get('total_assets')):.2f}",
+        f"- 基金今日盈亏：{_number(fund.get('today_pnl')):.2f}",
+        f"- 股票资产：{_number(stock.get('total_assets')):.2f}",
+        f"- 股票今日盈亏：{_number(stock.get('today_pnl')):.2f}",
+        f"- 股票可用现金：{_number(stock.get('available_cash')):.2f}",
         f"- 数据来源：{data_source}",
         f"- 行情状态：{quote_freshness.get('status', '未知')}，{quote_freshness.get('detail', '无详情')}",
         "",
@@ -295,6 +298,27 @@ def _format_recommendations(recommendations: list[dict[str, str]]) -> list[str]:
         reason_text = f"：{reason}" if reason else ""
         lines.append(f"- {action} {instrument}{amount_text}{reason_text}")
     return lines
+
+
+def _number(value: Any, default: float = 0.0) -> float:
+    if value is None or isinstance(value, bool):
+        return default
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if math.isfinite(parsed) else default
+
+
+def _whole_number(value: Any, default: int = 0) -> int:
+    return int(_number(value, float(default)))
+
+
+def _safe_position_strategy_tag(resolver: Any, config: dict[str, Any], position: dict[str, Any], account_key: str) -> str:
+    try:
+        return resolver(config, position, account_key)
+    except (TypeError, ValueError):
+        return str(position.get("tag", "unknown") or "unknown")
 
 
 def _try_load_dotenv(env_path: Path) -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import urllib.request
 from typing import Any
 
@@ -8,12 +9,8 @@ import pandas as pd
 
 from .disk_cache import load_generic_cache, save_generic_cache
 
-try:
-    import akshare as ak
-except ImportError:
-    ak = None  # type: ignore[assignment]
-
 MACRO_CACHE_KEY = "macro_indicators"
+AKSHARE_MACRO_ENABLED_ENV = "QA_ENABLE_AKSHARE_MACRO"
 
 
 def _safe_float(value: object) -> float | None:
@@ -27,8 +24,9 @@ def _safe_float(value: object) -> float | None:
 
 def _fetch_akshare_indicator(fetcher: str, column: str | None = None) -> tuple[float | None, str]:
     try:
-        if ak is None:
-            return None, "akshare not installed"
+        if not _akshare_macro_enabled():
+            return None, f"AkShare macro disabled; set {AKSHARE_MACRO_ENABLED_ENV}=1 to enable."
+        import akshare as ak
         fn = getattr(ak, fetcher)
         df = fn()
         if df is None or df.empty:
@@ -45,6 +43,14 @@ def fetch_macro_indicators() -> tuple[dict[str, Any], list[str]]:
     cached = load_generic_cache(MACRO_CACHE_KEY)
     if cached is not None:
         return cached, ["Macro: cache hit"]
+
+    if not _akshare_macro_enabled():
+        return {}, [f"AkShare macro disabled; set {AKSHARE_MACRO_ENABLED_ENV}=1 to enable."]
+
+    try:
+        import akshare as ak
+    except Exception as exc:
+        return {}, [f"AkShare macro import failed: {exc}"]
 
     indicators: dict[str, Any] = {}
     messages: list[str] = []
@@ -113,6 +119,11 @@ def fetch_macro_indicators() -> tuple[dict[str, Any], list[str]]:
 
     save_generic_cache(MACRO_CACHE_KEY, indicators)
     return indicators, messages
+
+
+def _akshare_macro_enabled() -> bool:
+    value = os.environ.get(AKSHARE_MACRO_ENABLED_ENV, "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def macro_summary(indicators: dict[str, Any]) -> list[dict[str, str]]:

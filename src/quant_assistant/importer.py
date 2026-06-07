@@ -21,6 +21,16 @@ PORTFOLIO_COLUMNS = [
     "last_daily_pct",
 ]
 
+NUMERIC_PORTFOLIO_COLUMNS = {
+    "market_value",
+    "holding_pnl",
+    "holding_pnl_pct",
+    "shares",
+    "price",
+    "cost",
+    "last_daily_pct",
+}
+
 
 def _has_value(value: Any) -> bool:
     if value is None:
@@ -33,6 +43,17 @@ def _has_value(value: Any) -> bool:
     if isinstance(value, str) and not value.strip():
         return False
     return True
+
+
+def _to_float(value: Any) -> float | None:
+    if not _has_value(value):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return None if pd.isna(parsed) else parsed
+
 
 SUMMARY_COLUMNS = [
     "account_type",
@@ -67,7 +88,7 @@ def normalize_import_table(frame: pd.DataFrame, mapping: dict[str, str]) -> pd.D
         if column not in normalized.columns:
             normalized[column] = None
 
-    for column in ["market_value", "holding_pnl", "holding_pnl_pct", "shares", "price", "cost", "last_daily_pct"]:
+    for column in NUMERIC_PORTFOLIO_COLUMNS:
         normalized[column] = pd.to_numeric(normalized[column], errors="coerce")
 
     normalized = normalized[PORTFOLIO_COLUMNS]
@@ -96,7 +117,10 @@ def dataframe_to_positions(frame: pd.DataFrame) -> list[dict[str, Any]]:
             if column in {"market_proxy"}:
                 position[column] = str(value).strip()
             else:
-                position[column] = float(value)
+                numeric_value = _to_float(value)
+                if numeric_value is None:
+                    continue
+                position[column] = numeric_value
         positions.append(position)
     return positions
 
@@ -205,9 +229,12 @@ def split_positions_by_account(
 
 def _is_fund_position(pos: dict[str, Any]) -> bool:
     """Heuristic: a position is a fund if it has no shares but has market_value."""
-    has_shares = pos.get("shares") is not None and float(pos.get("shares", 0) or 0) > 0
-    has_price = pos.get("price") is not None
-    has_market_value = pos.get("market_value") is not None and float(pos.get("market_value", 0) or 0) > 0
+    shares = _to_float(pos.get("shares"))
+    price = _to_float(pos.get("price"))
+    market_value = _to_float(pos.get("market_value"))
+    has_shares = shares is not None and shares > 0
+    has_price = price is not None and price > 0
+    has_market_value = market_value is not None and market_value > 0
 
     # Explicit fund tags
     fund_tags = {"wide_index", "tactical_ai", "core_ai_dca", "power_grid", "military",
@@ -1022,6 +1049,14 @@ def _prepare_imported_position(position: dict[str, Any]) -> dict[str, Any]:
         proxy = _infer_market_proxy(name, prepared.get("tag", "imported"))
         if proxy:
             prepared["market_proxy"] = proxy
+    for field in NUMERIC_PORTFOLIO_COLUMNS:
+        if field not in prepared:
+            continue
+        value = _to_float(prepared.get(field))
+        if value is None:
+            prepared.pop(field, None)
+        else:
+            prepared[field] = value
     return prepared
 
 
@@ -1107,15 +1142,22 @@ def recalc_account_summary(account: dict[str, Any], account_key: str = "") -> di
     """
     updated = dict(account)
     positions = updated.get("positions", [])
-    market_value_sum = sum(
-        float(p.get("market_value", 0) or 0)
-        for p in positions
-    )
+    if not isinstance(positions, list):
+        positions = []
+
+    market_value_sum = 0.0
+    for position in positions:
+        if not isinstance(position, dict):
+            continue
+        market_value = _to_float(position.get("market_value"))
+        if market_value is not None:
+            market_value_sum += market_value
 
     if account_key == "stock" or (not account_key and "available_cash" in updated):
         # Stock account
+        available_cash = _to_float(updated.get("available_cash")) or 0.0
         updated["market_value"] = round(market_value_sum, 2)
-        updated["total_assets"] = round(market_value_sum + float(updated.get("available_cash", 0) or 0), 2)
+        updated["total_assets"] = round(market_value_sum + available_cash, 2)
     else:
         # Fund account
         updated["total_assets"] = round(market_value_sum, 2)

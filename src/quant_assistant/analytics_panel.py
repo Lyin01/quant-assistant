@@ -10,29 +10,40 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 
-def load_portfolio_history(history_file: Path) -> pd.DataFrame:
+def load_portfolio_history(history_file: str | Path) -> pd.DataFrame:
     """Load portfolio history into a DataFrame for analysis."""
-    if not history_file.exists():
+    target = Path(history_file)
+    if not target.exists():
         return pd.DataFrame()
 
     records = []
-    with open(history_file, "r", encoding="utf-8") as f:
+    with target.open("r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:
                 continue
             try:
                 rec = json.loads(line)
+                if not isinstance(rec, dict):
+                    continue
                 ts = rec.get("timestamp", "")
-                summary = rec.get("changes", {}).get("summary", {})
+                timestamp = pd.to_datetime(ts, errors="coerce")
+                if pd.isna(timestamp):
+                    continue
+                changes = rec.get("changes", {})
+                if not isinstance(changes, dict):
+                    continue
+                summary = changes.get("summary", {})
+                if not isinstance(summary, dict):
+                    continue
                 total_assets = summary.get("total_assets")
                 if total_assets is not None:
                     records.append({
-                        "timestamp": pd.to_datetime(ts),
+                        "timestamp": timestamp,
                         "total_assets": float(total_assets),
                         "account": rec.get("account", "unknown"),
                     })
-            except (json.JSONDecodeError, ValueError):
+            except (json.JSONDecodeError, TypeError, ValueError):
                 continue
 
     if not records:
@@ -47,7 +58,9 @@ def compute_return_curve(history_df: pd.DataFrame) -> pd.DataFrame:
     if history_df.empty or len(history_df) < 2:
         return pd.DataFrame()
 
-    df = history_df.copy()
+    df = _clean_history_metrics_frame(history_df)
+    if len(df) < 2:
+        return pd.DataFrame()
     initial = df["total_assets"].iloc[0]
     if initial <= 0:
         return pd.DataFrame()
@@ -61,9 +74,14 @@ def compute_monthly_returns(history_df: pd.DataFrame) -> pd.DataFrame:
     if history_df.empty or len(history_df) < 2:
         return pd.DataFrame()
 
-    df = history_df.copy()
+    df = _clean_history_metrics_frame(history_df)
+    if len(df) < 2:
+        return pd.DataFrame()
     df["year_month"] = df["timestamp"].dt.to_period("M")
     monthly = df.groupby("year_month")["total_assets"].agg(["first", "last"]).reset_index()
+    monthly = monthly[monthly["first"] > 0].copy()
+    if monthly.empty:
+        return pd.DataFrame()
     monthly["return_pct"] = (monthly["last"] / monthly["first"] - 1) * 100
     monthly["year"] = monthly["year_month"].dt.year
     monthly["month"] = monthly["year_month"].dt.month
@@ -75,7 +93,10 @@ def compute_risk_metrics(history_df: pd.DataFrame) -> dict[str, float]:
     if history_df.empty or len(history_df) < 2:
         return {}
 
-    df = history_df.copy().sort_values("timestamp").reset_index(drop=True)
+    df = _clean_history_metrics_frame(history_df)
+    df = df[df["total_assets"] > 0].reset_index(drop=True)
+    if len(df) < 2:
+        return {}
     values = df["total_assets"].values
 
     # Max drawdown
@@ -107,12 +128,42 @@ def compute_risk_metrics(history_df: pd.DataFrame) -> dict[str, float]:
     }
 
 
+def _clean_history_metrics_frame(history_df: pd.DataFrame) -> pd.DataFrame:
+    if history_df.empty or not {"timestamp", "total_assets"} <= set(history_df.columns):
+        return pd.DataFrame()
+
+    df = history_df.copy()
+    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce", format="mixed")
+    df["total_assets"] = pd.to_numeric(df["total_assets"], errors="coerce")
+    df = df.dropna(subset=["timestamp", "total_assets"])
+    return df.sort_values("timestamp").reset_index(drop=True)
+
+
+def _float_or_zero(value: Any) -> float:
+    try:
+        parsed = float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    return 0.0 if pd.isna(parsed) else parsed
+
+
 def build_asset_distribution(portfolio: dict[str, Any]) -> pd.DataFrame:
     """Build asset distribution DataFrame from portfolio."""
     rows = []
-    for account_key, account in portfolio.get("accounts", {}).items():
+    accounts = portfolio.get("accounts", {})
+    if not isinstance(accounts, dict):
+        return pd.DataFrame()
+
+    for account_key, account in accounts.items():
+        if not isinstance(account, dict):
+            continue
         account_name = account.get("name", account_key)
-        for pos in account.get("positions", []):
+        positions = account.get("positions", [])
+        if not isinstance(positions, list):
+            continue
+        for pos in positions:
+            if not isinstance(pos, dict):
+                continue
             tag = pos.get("tag", "unknown")
             tag_display = {
                 "wide_index": "宽基",
@@ -131,7 +182,7 @@ def build_asset_distribution(portfolio: dict[str, Any]) -> pd.DataFrame:
                 "account": account_name,
                 "tag": tag_display,
                 "name": pos.get("name", ""),
-                "market_value": float(pos.get("market_value", 0) or 0),
+                "market_value": _float_or_zero(pos.get("market_value")),
             })
 
     return pd.DataFrame(rows)

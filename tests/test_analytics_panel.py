@@ -41,6 +41,25 @@ def test_load_portfolio_history_valid_records(tmp_path: Path):
     assert df["account"].tolist() == ["fund", "fund", "stock"]
 
 
+def test_load_portfolio_history_accepts_string_path(tmp_path: Path):
+    history_file = tmp_path / "portfolio_history.jsonl"
+    history_file.write_text(
+        json.dumps(
+            {
+                "timestamp": "2024-01-01T10:00:00",
+                "account": "fund",
+                "changes": {"summary": {"total_assets": 10000}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    df = load_portfolio_history(str(history_file))
+
+    assert len(df) == 1
+    assert df["total_assets"].iloc[0] == 10000.0
+
+
 def test_load_portfolio_history_skips_bad_lines(tmp_path: Path):
     history_file = tmp_path / "portfolio_history.jsonl"
     history_file.write_text(
@@ -52,6 +71,25 @@ def test_load_portfolio_history_skips_bad_lines(tmp_path: Path):
     df = load_portfolio_history(history_file)
     assert len(df) == 2
     assert df["total_assets"].tolist() == [10000.0, 10500.0]
+
+
+def test_load_portfolio_history_skips_bad_json_shapes(tmp_path: Path):
+    history_file = tmp_path / "portfolio_history.jsonl"
+    records = [
+        ["not", "a", "record"],
+        {"timestamp": "bad timestamp", "account": "fund", "changes": {"summary": {"total_assets": 10000}}},
+        {"timestamp": "2024-01-01T10:00:00", "account": "fund", "changes": []},
+        {"timestamp": "2024-01-02T10:00:00", "account": "fund", "changes": {"summary": []}},
+        {"timestamp": "2024-01-03T10:00:00", "account": "fund", "changes": {"summary": {"total_assets": "bad"}}},
+        {"timestamp": "2024-01-04T10:00:00", "account": "fund", "changes": {"summary": {"total_assets": 11000}}},
+    ]
+    history_file.write_text("\n".join(json.dumps(record) for record in records), encoding="utf-8")
+
+    df = load_portfolio_history(history_file)
+
+    assert len(df) == 1
+    assert df["timestamp"].iloc[0] == pd.Timestamp("2024-01-04T10:00:00")
+    assert df["total_assets"].iloc[0] == 11000.0
 
 
 def test_load_portfolio_history_skips_records_without_total_assets(tmp_path: Path):
@@ -101,6 +139,19 @@ def test_compute_return_curve_zero_initial():
     assert compute_return_curve(df).empty
 
 
+def test_compute_return_curve_cleans_string_values_and_bad_timestamps():
+    df = pd.DataFrame({
+        "timestamp": ["bad timestamp", "2024-01-02", "2024-01-01"],
+        "total_assets": ["bad", "110.0", "100.0"],
+        "account": ["fund"] * 3,
+    })
+
+    curve = compute_return_curve(df)
+
+    assert list(curve["timestamp"]) == [pd.Timestamp("2024-01-01"), pd.Timestamp("2024-01-02")]
+    assert curve["cumulative_return_pct"].tolist() == pytest.approx([0.0, 10.0])
+
+
 def test_compute_monthly_returns_basic():
     df = pd.DataFrame({
         "timestamp": pd.to_datetime([
@@ -133,6 +184,29 @@ def test_compute_monthly_returns_single_row():
     assert compute_monthly_returns(df).empty
 
 
+def test_compute_monthly_returns_skips_zero_initial_months():
+    df = pd.DataFrame({
+        "timestamp": pd.to_datetime(["2024-01-01", "2024-01-31", "2024-02-01", "2024-02-29"]),
+        "total_assets": [0.0, 100.0, 100.0, 110.0],
+        "account": ["fund"] * 4,
+    })
+
+    monthly = compute_monthly_returns(df)
+
+    assert list(monthly["year_month"]) == [pd.Period("2024-02", freq="M")]
+    assert monthly["return_pct"].iloc[0] == pytest.approx(10.0)
+
+
+def test_compute_monthly_returns_cleans_bad_rows():
+    df = pd.DataFrame({
+        "timestamp": ["2024-01-01", "bad timestamp", "2024-01-31"],
+        "total_assets": ["100.0", "999.0", "bad"],
+        "account": ["fund"] * 3,
+    })
+
+    assert compute_monthly_returns(df).empty
+
+
 def test_compute_risk_metrics_basic():
     df = pd.DataFrame({
         "timestamp": pd.to_datetime([
@@ -160,6 +234,16 @@ def test_compute_risk_metrics_single_row():
         "total_assets": [10000.0],
         "account": ["fund"],
     })
+    assert compute_risk_metrics(df) == {}
+
+
+def test_compute_risk_metrics_ignores_non_positive_and_bad_values():
+    df = pd.DataFrame({
+        "timestamp": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03"]),
+        "total_assets": [0.0, "bad", 100.0],
+        "account": ["fund"] * 3,
+    })
+
     assert compute_risk_metrics(df) == {}
 
 
@@ -238,3 +322,46 @@ def test_build_asset_distribution_missing_market_value():
     dist = build_asset_distribution(portfolio)
     assert len(dist) == 1
     assert dist["market_value"].iloc[0] == 0.0
+
+
+def test_build_asset_distribution_skips_bad_shapes():
+    portfolio = {
+        "accounts": {
+            "bad_account": "not-a-dict",
+            "bad_positions": {"name": "坏账户", "positions": "not-a-list"},
+            "mixed": {
+                "name": "正常账户",
+                "positions": [
+                    "not-a-position",
+                    {"name": "有效持仓", "tag": "wide_index", "market_value": 100},
+                ],
+            },
+        }
+    }
+
+    dist = build_asset_distribution(portfolio)
+
+    assert len(dist) == 1
+    assert dist["account"].iloc[0] == "正常账户"
+    assert dist["name"].iloc[0] == "有效持仓"
+    assert dist["market_value"].iloc[0] == 100.0
+
+
+def test_build_asset_distribution_bad_market_values_become_zero():
+    portfolio = {
+        "accounts": {
+            "fund": {
+                "name": "支付宝基金",
+                "positions": [
+                    {"name": "坏文本", "tag": "wide_index", "market_value": "bad"},
+                    {"name": "空值", "tag": "wide_index", "market_value": None},
+                    {"name": "NaN", "tag": "wide_index", "market_value": float("nan")},
+                ],
+            },
+        }
+    }
+
+    dist = build_asset_distribution(portfolio)
+
+    assert len(dist) == 3
+    assert list(dist["market_value"]) == [0.0, 0.0, 0.0]

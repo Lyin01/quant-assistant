@@ -45,6 +45,19 @@ def test_validate_config_flags_missing_required_sections():
     assert blocking_issue_count(issues) >= 3
 
 
+def test_validate_config_rejects_non_finite_cash_plan_numbers():
+    config = _valid_config()
+    config["cash_plan"]["available_cash_total"] = "nan"
+    config["cash_plan"]["minimum_cash_reserve"] = float("inf")
+
+    issues = validate_config(config)
+
+    locations = {issue["位置"] for issue in issues}
+    assert "cash_plan.available_cash_total" in locations
+    assert "cash_plan.minimum_cash_reserve" in locations
+    assert blocking_issue_count(issues) == 2
+
+
 def test_validate_portfolio_accepts_minimal_valid_portfolio():
     issues = validate_portfolio(_valid_portfolio())
 
@@ -67,6 +80,34 @@ def test_validate_portfolio_flags_bad_positions():
 
     assert issues[0]["问题"] == "持仓缺少名称"
     assert blocking_issue_count(issues) == 1
+
+
+def test_validate_portfolio_flags_invalid_account_numbers():
+    portfolio = _valid_portfolio()
+    portfolio["accounts"]["fund"]["total_assets"] = float("nan")
+    portfolio["accounts"]["stock"]["available_cash"] = "bad"
+
+    issues = validate_portfolio(portfolio)
+
+    locations = {issue["位置"] for issue in issues}
+    assert "accounts.fund.total_assets" in locations
+    assert "accounts.stock.available_cash" in locations
+    assert blocking_issue_count(issues) == 2
+
+
+def test_validate_portfolio_flags_invalid_position_numbers():
+    portfolio = _valid_portfolio()
+    portfolio["accounts"]["fund"]["positions"][0]["market_value"] = "bad"
+    portfolio["accounts"]["stock"]["positions"][0]["shares"] = "nan"
+    portfolio["accounts"]["stock"]["positions"][0]["price"] = True
+
+    issues = validate_portfolio(portfolio)
+
+    locations = {issue["位置"] for issue in issues}
+    assert "accounts.fund.positions[0].market_value" in locations
+    assert "accounts.stock.positions[0].shares" in locations
+    assert "accounts.stock.positions[0].price" in locations
+    assert blocking_issue_count(issues) == 3
 
 
 def test_validate_app_data_combines_config_and_portfolio_issues():

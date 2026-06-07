@@ -3,7 +3,7 @@ import sys
 import types
 from pathlib import Path
 
-from quant_assistant.llm_advisor import build_llm_prompt, diagnose_config, load_deepseek_settings
+from quant_assistant.llm_advisor import build_llm_context, build_llm_prompt, diagnose_config, load_deepseek_settings
 
 
 def test_llm_advisor_module_imports():
@@ -83,6 +83,79 @@ def test_build_llm_prompt_contains_core_sections():
     assert "易方达中证500" in prompt
     assert "=== 无策略覆盖/配置提示 ===" in prompt
     assert "沃尔核材" in prompt
+
+
+def test_build_llm_context_handles_bad_numeric_values():
+    config = {"rules": {"short_term": {}}, "quotes": {"proxies": {}}}
+    portfolio = {
+        "accounts": {
+            "fund": {
+                "total_assets": "nan",
+                "today_pnl": "bad",
+                "positions": ["not-a-position"],
+            },
+            "stock": {
+                "total_assets": "inf",
+                "market_value": "100",
+                "available_cash": "bad",
+                "holding_pnl": float("nan"),
+                "positions": [
+                    {
+                        "name": "Bad OCR",
+                        "tag": "imported",
+                        "market_value": "bad",
+                        "holding_pnl_pct": "nan",
+                        "shares": "bad",
+                        "price": "inf",
+                        "cost": True,
+                    },
+                    {"name": "Top", "tag": "short_term", "market_value": "80"},
+                ],
+            },
+        }
+    }
+
+    ctx = build_llm_context(config, portfolio, recommendations=[])
+
+    assert ctx["total_assets"] == 0.0
+    assert ctx["fund"]["position_count"] == 0
+    assert ctx["stock"]["available_cash"] == 0.0
+    assert ctx["stock"]["holding_pnl"] == 0.0
+    assert ctx["concentration"]["top_name"] == "Top"
+    assert ctx["concentration"]["top_market_value"] == 80.0
+    assert ctx["concentration"]["concentration_pct"] == 80.0
+    assert ctx["uncovered_positions"] == [
+        {
+            "account": "stock",
+            "name": "Bad OCR",
+            "tag": "imported",
+            "market_value": 0.0,
+            "holding_pnl_pct": 0.0,
+            "shares": 0,
+            "price": 0.0,
+            "cost": 0.0,
+        }
+    ]
+
+
+def test_build_llm_prompt_handles_bad_account_numbers():
+    portfolio = {
+        "accounts": {
+            "fund": {"total_assets": "bad", "today_pnl": "nan"},
+            "stock": {"total_assets": "inf", "today_pnl": True, "available_cash": "bad"},
+        }
+    }
+
+    prompt = build_llm_prompt(
+        portfolio=portfolio,
+        actionable_recommendations=[],
+        watchlist_recommendations=[],
+        coverage_issues=[],
+        data_source="snapshot",
+        quote_freshness={},
+    )
+
+    assert "0.00" in prompt
 
 
 def test_diagnose_config_returns_expected_keys(tmp_path, monkeypatch):

@@ -9,12 +9,12 @@ from typing import Iterable
 def append_recommendations(path: str | Path, recommendations: Iterable[dict[str, str]]) -> None:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    exists = target.exists()
+    needs_header = not target.exists() or target.stat().st_size == 0
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     with target.open("a", newline="", encoding="utf-8-sig") as file:
         writer = csv.DictWriter(file, fieldnames=["time", "action", "instrument", "amount", "reason"])
-        if not exists:
+        if needs_header:
             writer.writeheader()
         for rec in recommendations:
             writer.writerow(

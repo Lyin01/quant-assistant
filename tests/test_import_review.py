@@ -27,6 +27,12 @@ def test_detect_target_account_falls_back_to_shares():
     assert detect_target_account("通用", {}, [{"name": "易方达中证500"}]) == "fund"
 
 
+def test_detect_target_account_ignores_bad_shares():
+    assert detect_target_account("通用", {}, [{"name": "易方达中证500", "shares": "bad"}]) == "fund"
+    assert detect_target_account("通用", {}, [{"name": "易方达中证500", "shares": "0"}]) == "fund"
+    assert detect_target_account("通用", {}, [{"name": "半导体", "shares": "100"}]) == "stock"
+
+
 def test_import_review_blocks_empty_import():
     issues = import_review_issues([], account="stock", existing_positions=[])
 
@@ -50,6 +56,43 @@ def test_import_review_flags_missing_market_value_and_profit_rate():
     assert blocking_issue_count(issues) == 0
     mv_issues = [i for i in issues if i["问题"] == "缺少市值"]
     assert mv_issues[0]["级别"] == "提示"
+
+
+def test_import_review_treats_bad_market_value_as_missing():
+    issues = import_review_issues(
+        [{"name": "Alpha", "tag": "wide_index", "market_value": "bad", "holding_pnl_pct": 1.0}],
+        account="fund",
+        existing_positions=[{"name": "Alpha"}],
+    )
+
+    assert len(issues) == 1
+    assert "Alpha" in issues[0].values()
+    assert blocking_issue_count(issues) == 0
+
+
+def test_import_review_treats_bad_stock_numbers_as_missing():
+    issues = import_review_issues(
+        [
+            {
+                "name": "Alpha",
+                "tag": "semiconductor",
+                "market_value": 100.0,
+                "holding_pnl_pct": "bad",
+                "shares": "bad",
+                "price": "nan",
+                "cost": 0,
+            }
+        ],
+        account="stock",
+        existing_positions=[{"name": "Alpha"}],
+    )
+
+    problems = {issue["问题"] for issue in issues}
+    assert "缺少持有收益率" in problems
+    assert "股票持仓缺少股数" in problems
+    assert "股票持仓缺少现价" in problems
+    assert "股票持仓缺少成本" in problems
+    assert blocking_issue_count(issues) == 0
 
 
 def test_import_review_flags_stock_specific_missing_fields():

@@ -50,7 +50,7 @@ def _position_changed(old: dict[str, Any], new: dict[str, Any]) -> bool:
 
 
 def record_change(
-    history_file: Path,
+    history_file: str | Path,
     change_type: str,
     account: str,
     delta: dict[str, list[str]],
@@ -72,17 +72,22 @@ def record_change(
     if previous_snapshot is not None:
         record["previous_snapshot"] = previous_snapshot
 
-    with open(history_file, "a", encoding="utf-8") as f:
+    target = Path(history_file)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-def read_history(history_file: Path, limit: int = 50) -> list[dict[str, Any]]:
+def read_history(history_file: str | Path, limit: int = 50) -> list[dict[str, Any]]:
     """Read the most recent N history records (newest first)."""
-    if not history_file.exists():
+    if limit <= 0:
+        return []
+    target = Path(history_file)
+    if not target.exists():
         return []
 
     records: list[dict[str, Any]] = []
-    with open(history_file, "r", encoding="utf-8") as f:
+    with target.open("r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:
@@ -93,7 +98,7 @@ def read_history(history_file: Path, limit: int = 50) -> list[dict[str, Any]]:
     return list(reversed(records[-limit:]))
 
 
-def rollback(history_file: Path) -> dict[str, Any] | None:
+def rollback(history_file: str | Path) -> dict[str, Any] | None:
     """Restore the portfolio snapshot from the most recent history record."""
     history = read_history(history_file, limit=1)
     if not history:

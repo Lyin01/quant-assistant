@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,7 @@ from .importer import FUND_HOUSES, name_dedup_key, merge_keys_match
 
 ROOT_DATA = Path("data")
 USERS_DIR = ROOT_DATA / "users"
+SAFE_USER_PART_PATTERN = re.compile(r"[^a-zA-Z0-9_@.+-]+")
 
 DEFAULT_PORTFOLIO: dict[str, Any] = {
     "as_of": "",
@@ -29,12 +31,19 @@ DEFAULT_PORTFOLIO: dict[str, Any] = {
 }
 
 
+def _safe_user_part(value: Any, default: str) -> str:
+    safe = SAFE_USER_PART_PATTERN.sub("_", str(value or default))
+    while ".." in safe:
+        safe = safe.replace("..", "_")
+    safe = safe.strip("._-")
+    return safe or default
+
+
 def _user_id(user: dict[str, Any]) -> str:
-    import re
-    provider = user.get("provider", "unknown")
+    provider = _safe_user_part(user.get("provider"), "unknown")
     uid = user.get("id") or user.get("email", "anonymous")
-    # 防止路径穿越：只保留字母数字和下划线
-    safe_uid = re.sub(r"[^a-zA-Z0-9_@.+-]", "_", str(uid))
+    # Keep provider/user fragments safe for local directory names.
+    safe_uid = _safe_user_part(uid, "anonymous")
     return f"{provider}_{safe_uid}"
 
 

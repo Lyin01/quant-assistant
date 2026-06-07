@@ -17,6 +17,7 @@ PROXY_REQUIRED_TAGS = {
     "overseas",
     "healthcare",
 }
+BUILT_IN_KNOWN_TAGS = {"core_ai_dca"}
 
 
 def split_recommendations(
@@ -147,7 +148,7 @@ def stock_holdings_table(portfolio: dict[str, Any]) -> pd.DataFrame:
 def strategy_coverage_issues(config: dict[str, Any], portfolio: dict[str, Any]) -> list[dict[str, str]]:
     rules = config.get("rules", {})
     bindings = config.get("strategy_bindings", {})
-    known_tags = set(rules) | set(bindings)
+    known_tags = set(rules) | set(bindings) | BUILT_IN_KNOWN_TAGS
     proxies = config.get("quotes", {}).get("proxies", {})
     issues: list[dict[str, str]] = []
 

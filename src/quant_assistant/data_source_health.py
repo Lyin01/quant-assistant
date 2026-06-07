@@ -19,12 +19,15 @@ def record_request(provider: str, requested: int, success: int, failed: int, lat
         "failed": failed,
         "latency_ms": latency_ms,
     }
-    with open(HEALTH_FILE, "a", encoding="utf-8") as f:
+    HEALTH_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with HEALTH_FILE.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 def read_health(days: int = 7) -> list[dict[str, Any]]:
     """Read health records from the last N days."""
+    if days <= 0:
+        return []
     if not HEALTH_FILE.exists():
         return []
     cutoff = datetime.now(CHINA_TZ) - timedelta(days=days)

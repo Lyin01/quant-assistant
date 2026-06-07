@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -9,15 +10,24 @@ import pandas as pd
 
 CACHE_DIR = Path("data/cache/history")
 CACHE_TTL_DAYS = 7
+SAFE_CACHE_KEY_PATTERN = re.compile(r"[^A-Za-z0-9_.-]+")
 
 
 def _cache_key(secid: str, start: str, end: str, adjust: str) -> str:
     return f"{secid}_{start}_{end}_{adjust}"
 
 
+def _safe_cache_key(key: str) -> str:
+    safe = SAFE_CACHE_KEY_PATTERN.sub("_", str(key))
+    while ".." in safe:
+        safe = safe.replace("..", "_")
+    safe = safe.strip("._-")
+    return safe or "cache"
+
+
 def _cache_path(key: str) -> Path:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    return CACHE_DIR / f"{key}.parquet"
+    return CACHE_DIR / f"{_safe_cache_key(key)}.parquet"
 
 
 def load_cached(secid: str, start: str, end: str, adjust: str) -> pd.DataFrame | None:
@@ -51,7 +61,7 @@ _GENERIC_CACHE_TTL_DAYS = 1
 
 def _generic_cache_path(key: str) -> Path:
     _GENERIC_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    return _GENERIC_CACHE_DIR / f"{key}.json"
+    return _GENERIC_CACHE_DIR / f"{_safe_cache_key(key)}.json"
 
 
 def load_generic_cache(key: str) -> Any | None:
@@ -77,6 +87,14 @@ def save_generic_cache(key: str, data: Any) -> None:
     import json
     with path.open("w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def clear_generic_cache(key: str) -> bool:
+    path = _generic_cache_path(key)
+    if not path.exists():
+        return False
+    path.unlink(missing_ok=True)
+    return True
 
 
 def clear_expired_cache() -> int:

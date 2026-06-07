@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import urllib.parse
 import urllib.request
 from typing import Any
@@ -8,6 +9,9 @@ from typing import Any
 import pandas as pd
 
 from .disk_cache import load_generic_cache, save_generic_cache
+
+
+AKSHARE_SPOT_ENABLED_ENV = "QA_ENABLE_AKSHARE_COMMODITY_SPOT"
 
 
 # Predefined commodity chains with representative futures/spot symbols
@@ -148,6 +152,12 @@ def _fetch_futures_price(symbol: str) -> tuple[float | None, str]:
 
 def _fetch_akshare_spot(name: str) -> tuple[float | None, str]:
     """Try various akshare functions for spot/commodity prices."""
+    if not _akshare_spot_enabled():
+        return (
+            None,
+            f"AkShare spot disabled; set {AKSHARE_SPOT_ENABLED_ENV}=1 to enable experimental spot fetch.",
+        )
+
     try:
         import akshare as ak
     except Exception as exc:
@@ -199,6 +209,11 @@ def _fetch_akshare_spot(name: str) -> tuple[float | None, str]:
             continue
 
     return None, f"spot price for {name}: not found in any source"
+
+
+def _akshare_spot_enabled() -> bool:
+    value = os.environ.get(AKSHARE_SPOT_ENABLED_ENV, "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _is_valid_chain_cache(cached: Any) -> bool:

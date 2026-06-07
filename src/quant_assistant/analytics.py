@@ -96,10 +96,13 @@ def latest_signal(frame: pd.DataFrame) -> dict[str, Any]:
 
 def backtest_ma_trend(frame: pd.DataFrame, fast: int = 20, slow: int = 60) -> tuple[pd.DataFrame, dict[str, float]]:
     data = frame.copy().sort_values("date").reset_index(drop=True)
+    data["close"] = pd.to_numeric(data["close"], errors="coerce").replace([float("inf"), float("-inf")], pd.NA)
+    data = data.dropna(subset=["date", "close"])
+    data = data[data["close"] > 0].reset_index(drop=True)
     if len(data) < slow + 5:
         return pd.DataFrame(), {"error": float(len(data))}
 
-    data["ret"] = data["close"].pct_change().fillna(0)
+    data["ret"] = data["close"].pct_change().replace([float("inf"), float("-inf")], 0).fillna(0)
     data["fast_ma"] = data["close"].rolling(fast).mean()
     data["slow_ma"] = data["close"].rolling(slow).mean()
     data["signal"] = ((data["close"] > data["fast_ma"]) & (data["fast_ma"] > data["slow_ma"])).astype(int)

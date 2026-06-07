@@ -1,11 +1,15 @@
+import pandas as pd
+
 from quant_assistant.importer import (
     _ocr_import_error_message,
+    dataframe_to_positions,
     _infer_market_proxy,
     _infer_tag,
     merge_positions,
     parse_ocr_import_documents,
     parse_ocr_import_text,
     recalc_account_summary,
+    split_positions_by_account,
     update_account_from_import,
 )
 
@@ -52,6 +56,19 @@ def test_ocr_import_error_message_includes_original_exception(monkeypatch):
     message = _ocr_import_error_message(ImportError("libGL.so.1: cannot open shared object file"))
     assert "原始导入错误" in message
     assert "libGL.so.1" in message
+
+
+def test_dataframe_to_positions_skips_bad_numeric_values():
+    frame = pd.DataFrame([
+        {"name": "Alpha", "tag": "imported", "market_value": "bad", "price": "2.5", "market_proxy": "semi"},
+    ])
+
+    positions = dataframe_to_positions(frame)
+
+    assert len(positions) == 1
+    assert "market_value" not in positions[0]
+    assert positions[0]["price"] == 2.5
+    assert positions[0]["market_proxy"] == "semi"
 
 
 def test_merge_positions_preserves_existing_fields_when_import_is_partial():
@@ -101,6 +118,26 @@ def test_merge_positions_uses_import_value_when_present():
     assert len(merged) == 1
     assert merged[0]["market_value"] == 250.0
     assert merged[0]["shares"] == 150
+
+
+def test_merge_positions_ignores_bad_imported_numeric_values():
+    existing = [
+        {
+            "name": "Alpha",
+            "tag": "imported",
+            "market_value": 203.5,
+            "shares": 100,
+            "price": 2.035,
+        }
+    ]
+    imported = [{"name": "Alpha", "market_value": "bad", "shares": "nan", "price": "2.5"}]
+
+    merged = merge_positions(existing, imported)
+
+    assert len(merged) == 1
+    assert merged[0]["market_value"] == 203.5
+    assert merged[0]["shares"] == 100
+    assert merged[0]["price"] == 2.5
 
 
 def test_recalc_fund_account_summary():
@@ -164,6 +201,36 @@ def test_recalc_fund_ignores_available_cash():
     }
     updated = recalc_account_summary(account, "fund")
     assert updated["total_assets"] == 1000.0
+
+
+def test_recalc_account_summary_ignores_bad_numeric_values():
+    account = {
+        "name": "stock",
+        "available_cash": "bad",
+        "positions": [
+            {"name": "A", "market_value": "100.50"},
+            {"name": "B", "market_value": "bad"},
+            {"name": "C", "market_value": None},
+            {"name": "D", "market_value": float("nan")},
+            "not-a-position",
+        ],
+    }
+
+    updated = recalc_account_summary(account, "stock")
+
+    assert updated["market_value"] == 100.5
+    assert updated["total_assets"] == 100.5
+
+
+def test_split_positions_by_account_tolerates_bad_numeric_values():
+    fund_position = {"name": "Fund", "tag": "wide_index", "shares": "bad", "market_value": "bad"}
+    stock_position = {"name": "Stock", "tag": "imported", "shares": "bad", "price": 2.0, "market_value": "bad"}
+    shape_fund_position = {"name": "ByShape", "tag": "imported", "shares": "bad", "price": "nan", "market_value": 100}
+
+    stock_positions, fund_positions = split_positions_by_account([fund_position, stock_position, shape_fund_position])
+
+    assert fund_positions == [fund_position, shape_fund_position]
+    assert stock_positions == [stock_position]
 
 
 def test_infer_market_proxy_from_name():

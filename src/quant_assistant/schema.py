@@ -1,9 +1,28 @@
 from __future__ import annotations
 
+import math
 from typing import Any
 
 
 Issue = dict[str, str]
+
+ACCOUNT_NUMERIC_FIELDS = (
+    "total_assets",
+    "today_pnl",
+    "holding_pnl",
+    "market_value",
+    "available_cash",
+)
+
+POSITION_NUMERIC_FIELDS = (
+    "market_value",
+    "holding_pnl",
+    "holding_pnl_pct",
+    "shares",
+    "price",
+    "cost",
+    "last_daily_pct",
+)
 
 
 def validate_app_data(config: dict[str, Any], portfolio: dict[str, Any]) -> list[Issue]:
@@ -57,6 +76,10 @@ def validate_portfolio(portfolio: dict[str, Any]) -> list[Issue]:
             issues.append(_issue("portfolio", "错误", f"accounts.{account_key}", f"缺少 {account_key} 账户", "补充账户对象。"))
             continue
 
+        for field in ACCOUNT_NUMERIC_FIELDS:
+            if field in account and not _is_number(account.get(field)):
+                issues.append(_issue("portfolio", "错误", f"accounts.{account_key}.{field}", f"{field} 不是有效数字", "改成有限数字或删除该字段。"))
+
         positions = account.get("positions")
         if not isinstance(positions, list):
             issues.append(_issue("portfolio", "错误", f"accounts.{account_key}.positions", "positions 不是列表", "保持 positions 为数组。"))
@@ -71,6 +94,9 @@ def validate_portfolio(portfolio: dict[str, Any]) -> list[Issue]:
                 issues.append(_issue("portfolio", "错误", f"{path}.name", "持仓缺少名称", "补充 name 字段。"))
             if not str(position.get("tag", "")).strip():
                 issues.append(_issue("portfolio", "提示", f"{path}.tag", "持仓缺少策略标签", "补充 tag 字段。"))
+            for field in POSITION_NUMERIC_FIELDS:
+                if field in position and not _is_number(position.get(field)):
+                    issues.append(_issue("portfolio", "错误", f"{path}.{field}", f"{field} 不是有效数字", "改成有限数字或删除该字段。"))
 
     return issues
 
@@ -80,9 +106,10 @@ def blocking_issue_count(issues: list[Issue]) -> int:
 
 
 def _is_number(value: Any) -> bool:
+    if isinstance(value, bool):
+        return False
     try:
-        float(value)
-        return True
+        return math.isfinite(float(value))
     except (TypeError, ValueError):
         return False
 

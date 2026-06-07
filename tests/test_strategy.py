@@ -1,5 +1,5 @@
 from quant_assistant.config import load_json
-from quant_assistant.strategy import generate_recommendations
+from quant_assistant.strategy import generate_recommendations, position_strategy_tag
 from quant_assistant.analytics import (
     action_list,
     add_advanced_indicators,
@@ -99,6 +99,50 @@ def test_imported_stock_positions_use_short_term_rule_when_available():
     assert "实时行情缺失" not in tongyu["reason"]
 
 
+def test_position_strategy_tag_tolerates_bad_stock_numbers():
+    config = {"rules": {"short_term": {}}}
+    position = {"name": "Bad OCR", "tag": "imported", "shares": "bad", "price": "nan", "cost": True}
+
+    assert position_strategy_tag(config, position, "stock") == "imported"
+
+
+def test_generate_recommendations_tolerates_bad_numeric_values():
+    config = load_json("config.json")
+    config["cash_plan"]["available_cash_total"] = "bad"
+    config["cash_plan"]["minimum_cash_reserve"] = "nan"
+    portfolio = {
+        "accounts": {
+            "fund": {
+                "positions": [
+                    "not-a-position",
+                    {"name": "Bad Fund", "tag": "wide_index", "holding_pnl_pct": "bad", "last_daily_pct": "nan"},
+                ]
+            },
+            "stock": {
+                "available_cash": "bad",
+                "positions": [
+                    "not-a-position",
+                    {
+                        "name": "Bad Stock",
+                        "tag": "imported",
+                        "shares": "bad",
+                        "price": "inf",
+                        "cost": True,
+                        "market_value": "bad",
+                        "holding_pnl_pct": "nan",
+                    },
+                ],
+            },
+        }
+    }
+
+    recs = generate_recommendations(config, portfolio, quotes={})
+
+    instruments = {rec["instrument"] for rec in recs}
+    assert "Bad Fund" in instruments
+    assert "Bad Stock" in instruments
+
+
 def test_analytics_pipeline():
     frame = pd.DataFrame(
         {
@@ -121,6 +165,21 @@ def test_analytics_pipeline():
     assert not curve.empty
     assert "策略收益" in metrics
     assert len(actions) == 1
+
+
+def test_backtest_ignores_non_positive_close_values():
+    frame = pd.DataFrame(
+        {
+            "date": pd.date_range("2024-01-01", periods=30, freq="D"),
+            "close": [0.0] + [100.0 + index for index in range(29)],
+        }
+    )
+
+    curve, metrics = backtest_ma_trend(frame, fast=3, slow=5)
+
+    assert not curve.empty
+    assert curve.select_dtypes(include="number").isin([float("inf"), float("-inf")]).sum().sum() == 0
+    assert all(value not in {float("inf"), float("-inf")} for value in metrics.values())
 
 
 def test_interpret_backtest_warns_when_strategy_loses_to_buy_hold():

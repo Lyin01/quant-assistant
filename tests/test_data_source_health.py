@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+import quant_assistant.data_source_health as data_source_health
 from quant_assistant.data_source_health import (
     CHINA_TZ,
     HEALTH_FILE,
@@ -14,13 +15,11 @@ from quant_assistant.data_source_health import (
 
 
 @pytest.fixture(autouse=True)
-def clean_health_file():
-    """Remove health file before each test."""
-    if HEALTH_FILE.exists():
-        HEALTH_FILE.unlink()
-    yield
-    if HEALTH_FILE.exists():
-        HEALTH_FILE.unlink()
+def isolated_health_file(tmp_path, monkeypatch):
+    """Keep health-log tests away from the real workspace health log."""
+    health_file = tmp_path / "data_source_health.jsonl"
+    monkeypatch.setattr(data_source_health, "HEALTH_FILE", health_file)
+    globals()["HEALTH_FILE"] = health_file
 
 
 def test_record_request_creates_file():
@@ -35,6 +34,17 @@ def test_record_request_creates_file():
     assert rec["failed"] == 1
     assert rec["latency_ms"] == 123.4
     assert "timestamp" in rec
+
+
+def test_record_request_creates_parent_directory(monkeypatch, tmp_path):
+    nested_health_file = tmp_path / "nested" / "health" / "data_source_health.jsonl"
+    monkeypatch.setattr(data_source_health, "HEALTH_FILE", nested_health_file)
+
+    record_request("eastmoney", requested=1, success=1, failed=0, latency_ms=10.0)
+
+    assert nested_health_file.exists()
+    rec = json.loads(nested_health_file.read_text(encoding="utf-8").strip())
+    assert rec["provider"] == "eastmoney"
 
 
 def test_record_request_appends():
@@ -74,6 +84,13 @@ def test_read_health_filters_old_records():
 def test_read_health_empty_file():
     records = read_health(days=7)
     assert records == []
+
+
+def test_read_health_non_positive_days_returns_empty():
+    record_request("eastmoney", requested=5, success=5, failed=0, latency_ms=100.0)
+
+    assert read_health(days=0) == []
+    assert read_health(days=-1) == []
 
 
 def test_read_health_skips_malformed_lines():

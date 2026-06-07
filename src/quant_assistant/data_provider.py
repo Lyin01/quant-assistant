@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 import urllib.parse
 import urllib.request
@@ -13,6 +14,7 @@ from .data_source_health import record_request
 
 
 CHINA_TZ = timezone(timedelta(hours=8))
+AKSHARE_QUOTES_ENABLED_ENV = "QA_ENABLE_AKSHARE_QUOTES"
 
 
 @dataclass(frozen=True)
@@ -181,7 +183,7 @@ class TencentProvider:
 
 class AutoProvider:
     def __init__(self, timeout: int = 8) -> None:
-        self.akshare = AkShareProvider()
+        self.akshare = AkShareProvider() if _akshare_quotes_enabled() else None
         self.eastmoney = EastMoneyProvider(timeout=timeout)
         self.tencent = TencentProvider(timeout=timeout)
 
@@ -193,12 +195,6 @@ class AutoProvider:
         """Fetch quotes in parallel from all providers, return as soon as we have enough."""
         if not secids:
             return {}, ["AutoProvider: no secids requested."]
-
-        # Eager-import akshare so the worker thread doesn't pay first-import cost.
-        try:
-            import akshare as ak  # noqa: F401
-        except Exception:
-            pass
 
         def _fetch(fn, name, targets):
             start = time.perf_counter()
@@ -213,13 +209,20 @@ class AutoProvider:
 
         quotes: dict[str, Quote] = {}
         messages: list[str] = []
+        provider_jobs = [
+            (self.eastmoney.get_quotes_with_status, "eastmoney"),
+            (self.tencent.get_quotes_with_status, "tencent"),
+        ]
+        if self.akshare is not None:
+            provider_jobs.append((self.akshare.get_quotes_with_status, "akshare"))
+        else:
+            messages.append(f"AkShare quotes disabled; set {AKSHARE_QUOTES_ENABLED_ENV}=1 to enable.")
 
-        # Phase 1: Race all three providers; use whoever returns first.
-        executor = ThreadPoolExecutor(max_workers=3)
+        # Phase 1: Race enabled providers; use whoever returns first.
+        executor = ThreadPoolExecutor(max_workers=len(provider_jobs))
         futures = {
-            executor.submit(_fetch, self.eastmoney.get_quotes_with_status, "eastmoney", secids): "eastmoney",
-            executor.submit(_fetch, self.akshare.get_quotes_with_status, "akshare", secids): "akshare",
-            executor.submit(_fetch, self.tencent.get_quotes_with_status, "tencent", secids): "tencent",
+            executor.submit(_fetch, fetcher, name, secids): name
+            for fetcher, name in provider_jobs
         }
 
         done, not_done = wait(list(futures.keys()), timeout=2, return_when=FIRST_COMPLETED)
@@ -294,6 +297,11 @@ def quote_status(config: dict[str, Any]) -> str:
     decision_mode = config.get("market_provider", {}).get("use_live_proxy_for_decisions", False)
     mode = "实时行情参与策略判断" if decision_mode else "实时行情仅展示，策略按持仓快照判断"
     return f"行情源: {provider_name}; {mode}."
+
+
+def _akshare_quotes_enabled() -> bool:
+    value = os.environ.get(AKSHARE_QUOTES_ENABLED_ENV, "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _num(value: object) -> float | None:

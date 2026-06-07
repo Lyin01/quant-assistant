@@ -8,23 +8,34 @@ import pytest
 from quant_assistant.disk_cache import (
     CACHE_DIR,
     CACHE_TTL_DAYS,
+    _GENERIC_CACHE_DIR,
     _cache_key,
     _cache_path,
+    _generic_cache_path,
+    _safe_cache_key,
     clear_expired_cache,
+    clear_generic_cache,
+    load_generic_cache,
     load_cached,
+    save_generic_cache,
     save_cached,
 )
 
 
 @pytest.fixture(autouse=True)
-def clean_cache_dir():
-    """Remove cache files before each test."""
+def isolated_cache_dirs(tmp_path, monkeypatch):
+    """Keep cache tests away from the real workspace cache."""
+    history_dir = tmp_path / "history"
+    generic_dir = tmp_path / "generic"
+    monkeypatch.setattr("quant_assistant.disk_cache.CACHE_DIR", history_dir)
+    monkeypatch.setattr("quant_assistant.disk_cache._GENERIC_CACHE_DIR", generic_dir)
+    globals()["CACHE_DIR"] = history_dir
+    globals()["_GENERIC_CACHE_DIR"] = generic_dir
     if CACHE_DIR.exists():
         for path in CACHE_DIR.glob("*.parquet"):
             path.unlink(missing_ok=True)
-    yield
-    if CACHE_DIR.exists():
-        for path in CACHE_DIR.glob("*.parquet"):
+    if _GENERIC_CACHE_DIR.exists():
+        for path in _GENERIC_CACHE_DIR.glob("*.json"):
             path.unlink(missing_ok=True)
 
 
@@ -33,11 +44,24 @@ def test_cache_key_format():
     assert key == "1.000001_2024-01-01_2024-12-31_qfq"
 
 
+def test_safe_cache_key_strips_path_fragments():
+    assert _safe_cache_key("../evil/key") == "evil_key"
+    assert _safe_cache_key("...") == "cache"
+
+
 def test_cache_path_creates_dir():
     key = _cache_key("1.000001", "2024-01-01", "2024-12-31", "qfq")
     path = _cache_path(key)
     assert CACHE_DIR.exists()
     assert path.name == f"{key}.parquet"
+
+
+def test_cache_path_keeps_path_fragments_inside_cache_dir():
+    path = _cache_path("../evil/key")
+
+    assert path.parent == CACHE_DIR
+    assert path.name == "evil_key.parquet"
+    assert path.resolve().is_relative_to(CACHE_DIR.resolve())
 
 
 def test_save_and_load_cached():
@@ -112,3 +136,27 @@ def test_clear_expired_cache():
 def test_clear_expired_cache_empty_dir():
     removed = clear_expired_cache()
     assert removed == 0
+
+
+def test_save_and_load_generic_cache_with_sanitized_key():
+    save_generic_cache("../macro/key", {"value": 1})
+
+    path = _generic_cache_path("../macro/key")
+    assert path.parent == _GENERIC_CACHE_DIR
+    assert path.name == "macro_key.json"
+    assert load_generic_cache("../macro/key") == {"value": 1}
+
+
+def test_save_generic_cache_ignores_none():
+    save_generic_cache("empty", None)
+
+    assert not _generic_cache_path("empty").exists()
+
+
+def test_clear_generic_cache_removes_existing_entry():
+    save_generic_cache("clear-me", {"value": 1})
+
+    assert load_generic_cache("clear-me") == {"value": 1}
+    assert clear_generic_cache("clear-me") is True
+    assert load_generic_cache("clear-me") is None
+    assert clear_generic_cache("clear-me") is False

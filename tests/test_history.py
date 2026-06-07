@@ -29,6 +29,15 @@ def test_compute_delta_empty_lists_when_no_changes():
     assert delta["removed"] == []
 
 
+def test_compute_delta_ignores_id_and_tiny_numeric_noise():
+    existing = [{"id": "old", "name": "A", "market_value": 100.0000001}]
+    imported = [{"id": "new", "name": "A", "market_value": 100.0000002}]
+
+    delta = compute_delta(existing, imported)
+
+    assert delta == {"added": [], "updated": [], "removed": []}
+
+
 def test_record_and_read_history():
     with TemporaryDirectory() as tmpdir:
         history_file = Path(tmpdir) / "test_history.jsonl"
@@ -47,6 +56,76 @@ def test_record_and_read_history():
         assert history[0]["type"] == "ocr_import"
         assert history[0]["account"] == "stock"
         assert history[0]["changes"]["added"] == ["A"]
+
+
+def test_record_change_creates_parent_directory():
+    with TemporaryDirectory() as tmpdir:
+        history_file = Path(tmpdir) / "nested" / "history" / "test_history.jsonl"
+
+        record_change(
+            history_file,
+            change_type="ocr_import",
+            account="fund",
+            delta={"added": [], "updated": ["A"], "removed": []},
+            summary={"total_assets": 1000.0},
+        )
+
+        history = read_history(history_file)
+        assert history_file.exists()
+        assert history[0]["account"] == "fund"
+        assert history[0]["changes"]["updated"] == ["A"]
+
+
+def test_history_helpers_accept_string_paths():
+    with TemporaryDirectory() as tmpdir:
+        history_file = Path(tmpdir) / "history.jsonl"
+        snapshot = {"positions": [{"name": "A", "market_value": 100.0}]}
+
+        record_change(
+            str(history_file),
+            change_type="ocr_import",
+            account="stock",
+            delta={"added": ["A"], "updated": [], "removed": []},
+            summary={"total_assets": 100.0},
+            previous_snapshot=snapshot,
+        )
+
+        history = read_history(str(history_file))
+        assert history[0]["changes"]["added"] == ["A"]
+        assert rollback(str(history_file)) == snapshot
+
+
+def test_read_history_skips_bad_lines_and_returns_newest_first():
+    with TemporaryDirectory() as tmpdir:
+        history_file = Path(tmpdir) / "test_history.jsonl"
+        history_file.write_text(
+            "\n".join(
+                [
+                    json.dumps({"timestamp": "1", "account": "fund"}, ensure_ascii=False),
+                    "{bad json",
+                    json.dumps({"timestamp": "2", "account": "stock"}, ensure_ascii=False),
+                    "",
+                    json.dumps({"timestamp": "3", "account": "fund"}, ensure_ascii=False),
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        history = read_history(history_file, limit=2)
+
+        assert [record["timestamp"] for record in history] == ["3", "2"]
+
+
+def test_read_history_non_positive_limit_returns_empty_list():
+    with TemporaryDirectory() as tmpdir:
+        history_file = Path(tmpdir) / "test_history.jsonl"
+        history_file.write_text(
+            json.dumps({"timestamp": "1", "account": "fund"}, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+
+        assert read_history(history_file, limit=0) == []
+        assert read_history(history_file, limit=-1) == []
 
 
 def test_rollback_restores_previous_snapshot():

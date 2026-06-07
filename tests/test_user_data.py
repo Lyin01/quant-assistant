@@ -3,6 +3,23 @@ import json
 from quant_assistant import user_data
 
 
+def test_user_id_preserves_email_safe_characters():
+    user = {"provider": "github", "email": "a.b+c-d@example.com"}
+
+    assert user_data._user_id(user) == "github_a.b+c-d@example.com"
+
+
+def test_user_dir_sanitizes_path_fragments(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    user = {"provider": "../github", "id": r"..\evil/user..name"}
+
+    directory = user_data._user_dir(user)
+
+    users_root = (tmp_path / "data" / "users").resolve()
+    assert directory.resolve().is_relative_to(users_root)
+    assert directory.name == "github_evil_user_name"
+
+
 def test_get_or_create_portfolio_reconciles_inconsistent_stock_profit_pct(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
 

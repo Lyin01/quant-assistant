@@ -26,6 +26,44 @@ def test_default_scan_limit_is_small_enough_for_interactive_use():
     assert market_scanner.DEFAULT_SCAN_LIMIT == 30
 
 
+def test_fetch_all_etfs_uses_cached_list_before_network(monkeypatch):
+    cached_rows = [
+        {"code": "159915", "name": "创业板ETF", "price": "2.0", "amount": "100"},
+    ]
+
+    monkeypatch.setattr(
+        market_scanner,
+        "load_generic_cache",
+        lambda key: cached_rows if key == market_scanner.ETF_LIST_CACHE_KEY else None,
+    )
+
+    def fail_network(*args, **kwargs):
+        raise AssertionError("network should not be used when ETF list cache is warm")
+
+    monkeypatch.setattr(market_scanner.urllib.request, "urlopen", fail_network)
+
+    frame = market_scanner.fetch_all_etfs()
+
+    assert frame.loc[0, "code"] == "159915"
+    assert frame.loc[0, "name"] == "创业板ETF"
+    assert frame.loc[0, "price"] == 2.0
+
+
+def test_fetch_all_etfs_skips_akshare_list_by_default(monkeypatch):
+    monkeypatch.delenv(market_scanner.AKSHARE_ETF_LIST_ENABLED_ENV, raising=False)
+    monkeypatch.setattr(market_scanner, "load_generic_cache", lambda key: None)
+
+    def fail_eastmoney(*args, **kwargs):
+        raise TimeoutError("eastmoney timeout")
+
+    monkeypatch.setattr(market_scanner.urllib.request, "urlopen", fail_eastmoney)
+
+    frame = market_scanner.fetch_all_etfs()
+
+    assert frame.empty
+    assert list(frame.columns) == market_scanner.ETF_LIST_COLUMNS
+
+
 def test_scan_etfs_uses_fallback_universe_when_etf_list_is_empty(monkeypatch):
     monkeypatch.setattr(market_scanner, "load_generic_cache", lambda key: None)
     monkeypatch.setattr(market_scanner, "save_generic_cache", lambda key, value: None)

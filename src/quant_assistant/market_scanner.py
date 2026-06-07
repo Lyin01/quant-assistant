@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import json
+import os
 import time
 import urllib.parse
 import urllib.request
@@ -15,6 +16,8 @@ from .market_data import fetch_history, normalize_history
 
 DEFAULT_SCAN_LIMIT = 30
 SUMMARY_CACHE_PREFIX = "scanner_summary_v1"
+ETF_LIST_CACHE_KEY = "scanner_etf_list_v1"
+AKSHARE_ETF_LIST_ENABLED_ENV = "QA_ENABLE_AKSHARE_ETF_LIST"
 ETF_LIST_COLUMNS = ["code", "name", "price", "pct", "volume", "amount", "total_mv", "float_mv"]
 FALLBACK_ETF_UNIVERSE = [
     ("511880", "银华日利ETF"),
@@ -95,6 +98,12 @@ def _fallback_etf_universe() -> pd.DataFrame:
 
 
 def fetch_all_etfs() -> pd.DataFrame:
+    cached = load_generic_cache(ETF_LIST_CACHE_KEY)
+    if isinstance(cached, list) and cached:
+        cached_df = _normalize_etf_list(pd.DataFrame(cached))
+        if not cached_df.empty:
+            return cached_df
+
     # Try EastMoney first
     try:
         params = {
@@ -139,9 +148,16 @@ def fetch_all_etfs() -> pd.DataFrame:
         )
         df = _normalize_etf_list(df)
         if not df.empty:
+            save_generic_cache(ETF_LIST_CACHE_KEY, json.loads(df.to_json(orient="records", force_ascii=False)))
             return df
     except Exception:
         pass
+
+    # Fallback to AkShare only when explicitly enabled. Some AkShare data paths can
+    # be slow or depend on native JS runtimes, while scan_etfs already has a local
+    # fallback universe for interactive use.
+    if not _akshare_etf_list_enabled():
+        return _empty_etf_list()
 
     # Fallback to AkShare
     try:
@@ -161,9 +177,17 @@ def fetch_all_etfs() -> pd.DataFrame:
         }
         existing = {k: v for k, v in rename.items() if k in frame.columns}
         df = frame.rename(columns=existing)
-        return _normalize_etf_list(df)
+        df = _normalize_etf_list(df)
+        if not df.empty:
+            save_generic_cache(ETF_LIST_CACHE_KEY, json.loads(df.to_json(orient="records", force_ascii=False)))
+        return df
     except Exception:
         return _empty_etf_list()
+
+
+def _akshare_etf_list_enabled() -> bool:
+    value = os.environ.get(AKSHARE_ETF_LIST_ENABLED_ENV, "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _etf_secid(code: str) -> str:
@@ -388,7 +412,7 @@ def _scan_one(code: str, name: str, price: float, force_refresh: bool = False) -
     except Exception:
         pass
 
-    # Fallback to fetch_history (cache → AkShare → EastMoney → Tencent)
+    # Fallback to fetch_history (cache -> EastMoney -> Tencent -> optional AkShare)
     if klines.empty or len(klines) < 20:
         secid = _etf_secid(code)
         try:

@@ -18,7 +18,7 @@ Quant Assistant 是一个本地/半云端的个人量化复盘助手。它读取
 - 历史 K 线：加载标的历史行情并显示 MA20 / MA60 / 布林带。
 - 信号 / ETF 排行：生成均线信号和 ETF 涨跌幅排行。
 - 回测：MA 趋势回测。
-- 导入持仓：CSV / Excel / 截图 OCR / 粘贴文本 / 手动录入。
+- 导入持仓：CSV / Excel / 截图 OCR（含上传预览）/ 粘贴 OCR 文本 / 手动录入。
 - 分析：资产分布、收益曲线、风险指标、月度收益。
 - 市场扫描：ETF 多因子技术面扫描。
 - 宏观/产业：宏观指标、产业链价格、政策新闻。
@@ -29,15 +29,15 @@ PowerShell:
 
 ```powershell
 cd "E:\PROJECT FROM CODEX"
-python -m pip install -r requirements.txt
+py -m pip install -r requirements.txt
 $env:PYTHONPATH = Join-Path (Get-Location) "src"
-streamlit run app.py
+py -m streamlit run app.py
 ```
 
-如果 `python` 指向错误解释器，可以改用：
+如果已经确认 `python` 指向正确的项目解释器，也可以使用：
 
 ```powershell
-py -m streamlit run app.py
+streamlit run app.py
 ```
 
 ## CLI 复盘
@@ -47,23 +47,33 @@ py -m streamlit run app.py
 ```powershell
 cd "E:\PROJECT FROM CODEX"
 $env:PYTHONPATH = Join-Path (Get-Location) "src"
-python -m quant_assistant.cli --config config.json --portfolio portfolio.json --no-live
+py -m quant_assistant.cli --config config.json --portfolio portfolio.json --no-live
 ```
 
 保存建议日志：
 
 ```powershell
-python -m quant_assistant.cli --config config.json --portfolio portfolio.json --no-live --save-log
+py -m quant_assistant.cli --config config.json --portfolio portfolio.json --no-live --save-log
 ```
 
 ## 测试
 
 ```powershell
 cd "E:\PROJECT FROM CODEX"
-python -m pytest
+py -m pytest
 ```
 
 `pytest.ini` 已配置项目内临时目录，避免 Windows 默认 Temp 目录权限导致 `tmp_path` fixture 报错。
+
+如果 `python` 指向 Codex/Hermes 自带环境，可能缺少 `pip` 或项目依赖；Windows 本机验证优先使用 `py -m pytest`。
+
+完整只读验证可以直接运行：
+
+```powershell
+.\scripts\verify_quant_assistant.ps1
+```
+
+该脚本会执行 `git status --short`、`py -m py_compile app.py`、`py -m pytest`、CLI 本地快照复盘、真实持仓/日志文件哈希不变检查和 `git diff --check`。
 
 ## 数据校验
 
@@ -91,6 +101,8 @@ app.py
 - 与部署无关的大文件、视频、试验目录
 
 当前工作区里 `agent-trials/`、`portfolio-app/`、`video-projects/`、`depcheck-grade-fixture*/`、`codex-clawbot-bridge/` 和 `*.mp4` 属于本地试验或历史产物，默认不进入部署提交。
+
+提交时不要使用 `git add .`。本工作区长期存在本地备份、截图、实验目录和用户数据快照；请只添加本次任务实际修改的文件。2026-06-05 收尾变更的建议提交范围见 `reports/change_set_audit_2026-06-05.md`。
 
 ## 目录说明
 

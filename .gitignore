@@ -43,7 +43,8 @@ Thumbs.db
 # Project specific
 data/users/
 data/cache/
-reports/
+reports/*
+!reports/*_audit_2026-06-05.md
 *.log
 streamlit_test.log
 debug_screenshot.png
