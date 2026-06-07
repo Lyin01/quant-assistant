@@ -204,6 +204,66 @@ def build_llm_prompt(
     return "\n".join(header_lines + actionable_lines + watchlist_lines + hold_lines + coverage_lines).strip()
 
 
+def build_local_rule_advice(
+    portfolio: dict[str, Any],
+    actionable_recommendations: list[dict[str, str]],
+    watchlist_recommendations: list[dict[str, str]],
+    coverage_issues: list[dict[str, str]],
+    data_source: str,
+    quote_freshness: dict[str, Any],
+) -> str:
+    fund = portfolio.get("accounts", {}).get("fund", {})
+    stock = portfolio.get("accounts", {}).get("stock", {})
+    action_count = len(actionable_recommendations)
+    watch_count = len(watchlist_recommendations)
+    issue_count = len(coverage_issues)
+
+    lines = [
+        "### 本地规则摘要（非 LLM）",
+        f"- 数据来源：{data_source}；行情状态：{quote_freshness.get('status', '未知')}。",
+        f"- 基金资产：{_number(fund.get('total_assets')):.2f}；股票资产：{_number(stock.get('total_assets')):.2f}；股票可用现金：{_number(stock.get('available_cash')):.2f}。",
+        f"- 今日动作 {action_count} 条，观察项 {watch_count} 条，策略配置提示 {issue_count} 条。",
+    ]
+
+    if not quote_freshness.get("reliable", True):
+        detail = str(quote_freshness.get("detail", "")).strip()
+        lines.append(f"- 行情可靠性不足：{detail or '建议只参考快照和历史复盘。'}")
+
+    lines.extend(["", "#### 今日动作"])
+    if actionable_recommendations:
+        lines.extend(_format_recommendations(actionable_recommendations[:8]))
+        if len(actionable_recommendations) > 8:
+            lines.append(f"- 其余 {len(actionable_recommendations) - 8} 条动作请查看上方表格。")
+    else:
+        lines.append("- 当前没有触发买入、卖出或限价买入动作。")
+
+    lines.extend(["", "#### 重点观察"])
+    if watchlist_recommendations:
+        lines.extend(_format_recommendations(watchlist_recommendations[:8]))
+        if len(watchlist_recommendations) > 8:
+            lines.append(f"- 其余 {len(watchlist_recommendations) - 8} 条观察项请查看上方 HOLD 列表。")
+    else:
+        lines.append("- 当前没有 HOLD 观察项。")
+
+    lines.extend(["", "#### 人工复核"])
+    if coverage_issues:
+        for issue in coverage_issues[:8]:
+            lines.append(
+                f"- {issue.get('账户', issue.get('璐︽埛', '未知账户'))} / "
+                f"{issue.get('标的', issue.get('鏍囩殑', '未知标的'))}："
+                f"{issue.get('问题', issue.get('闂', '待复核'))}。"
+                f"{issue.get('建议', issue.get('寤鸿', ''))}"
+            )
+        if len(coverage_issues) > 8:
+            lines.append(f"- 其余 {len(coverage_issues) - 8} 条配置提示请查看策略覆盖检查。")
+    else:
+        lines.append("- 当前没有明显策略覆盖缺口。")
+
+    lines.append("")
+    lines.append("以上为规则引擎整理结果，不调用外部模型，不构成收益预测或自动下单。")
+    return "\n".join(lines).strip()
+
+
 def request_deepseek_advice(settings: DeepSeekSettings, prompt: str, timeout_seconds: int = 25) -> str:
     if not settings.configured:
         raise ValueError("DeepSeek API Key 未配置。")

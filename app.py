@@ -54,7 +54,13 @@ except Exception as _imp_err:
     st.code(traceback.format_exc())
     st.stop()
 from quant_assistant.commodity_chain import chain_summary, fetch_chain_prices, list_chains
-from quant_assistant.llm_advisor import build_llm_prompt, diagnose_config, load_deepseek_settings, request_deepseek_advice
+from quant_assistant.llm_advisor import (
+    build_llm_prompt,
+    build_local_rule_advice,
+    diagnose_config,
+    load_deepseek_settings,
+    request_deepseek_advice,
+)
 from quant_assistant.macro_dashboard import fetch_macro_indicators, macro_summary
 from quant_assistant.market_data import fetch_etf_ranking, fetch_history, instrument_options
 from quant_assistant.market_scanner import DEFAULT_SCAN_LIMIT, scan_etfs
@@ -301,7 +307,16 @@ if page == "总览":
                     except Exception as exc:
                         st.session_state["deepseek_advice_error"] = str(exc)
         else:
-            st.warning("未检测到 DeepSeek API Key，LLM 智能建议功能暂不可用。")
+            st.info("未检测到 DeepSeek API Key，已显示本地规则摘要；配置 API Key 后可调用外部 LLM 生成更完整复盘。")
+            local_advice = build_local_rule_advice(
+                portfolio=portfolio,
+                actionable_recommendations=actionable_recs,
+                watchlist_recommendations=watchlist_recs,
+                coverage_issues=coverage_issues,
+                data_source=data_source,
+                quote_freshness=quote_freshness,
+            )
+            st.markdown(local_advice)
             diag = diagnose_config(PROJECT_ROOT)
             with st.expander("配置诊断详情", expanded=True):
                 st.write(f"项目根目录：`{diag['project_root']}`")

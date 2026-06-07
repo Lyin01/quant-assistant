@@ -116,6 +116,9 @@ Important: screenshot import now has two paths. It can run RapidOCR on uploaded 
 - `src\quant_assistant\importer.py`
   - CSV/Excel normalization.
   - OCR text parser: `parse_ocr_positions`, `parse_ocr_summary`.
+- `src\quant_assistant\llm_advisor.py`
+  - DeepSeek prompt/API helpers.
+  - When DeepSeek is not configured, the app shows a local rule-summary fallback instead of a dead LLM panel.
 - `tests\test_strategy.py`
   - Strategy, live-quote behavior, importer parsing tests.
 

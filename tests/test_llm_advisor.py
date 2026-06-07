@@ -3,7 +3,13 @@ import sys
 import types
 from pathlib import Path
 
-from quant_assistant.llm_advisor import build_llm_context, build_llm_prompt, diagnose_config, load_deepseek_settings
+from quant_assistant.llm_advisor import (
+    build_llm_context,
+    build_llm_prompt,
+    build_local_rule_advice,
+    diagnose_config,
+    load_deepseek_settings,
+)
 
 
 def test_llm_advisor_module_imports():
@@ -156,6 +162,36 @@ def test_build_llm_prompt_handles_bad_account_numbers():
     )
 
     assert "0.00" in prompt
+
+
+def test_build_local_rule_advice_summarizes_without_api_key():
+    portfolio = {
+        "accounts": {
+            "fund": {"total_assets": 10000},
+            "stock": {"total_assets": 5000, "available_cash": 1200},
+        }
+    }
+
+    advice = build_local_rule_advice(
+        portfolio=portfolio,
+        actionable_recommendations=[
+            {"action": "SELL", "instrument": "机器人", "amount": "100 股", "reason": "触发止盈。"},
+        ],
+        watchlist_recommendations=[
+            {"action": "HOLD", "instrument": "半导体", "amount": "", "reason": "等待价格回落。"},
+        ],
+        coverage_issues=[
+            {"账户": "股票", "标的": "Alpha", "问题": "缺少行情代理", "建议": "补充 market_proxy。"},
+        ],
+        data_source="持仓快照",
+        quote_freshness={"reliable": False, "status": "过期", "detail": "未获取到实时行情。"},
+    )
+
+    assert "本地规则摘要（非 LLM）" in advice
+    assert "SELL 机器人 100 股" in advice
+    assert "HOLD 半导体" in advice
+    assert "Alpha" in advice
+    assert "不调用外部模型" in advice
 
 
 def test_diagnose_config_returns_expected_keys(tmp_path, monkeypatch):
