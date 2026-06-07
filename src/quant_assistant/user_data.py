@@ -119,6 +119,9 @@ def _clean_portfolio(data: dict[str, Any]) -> dict[str, Any]:
                 seen_keys.append((dkey, len(deduped)))
                 deduped.append(pos)
 
+        if account_key == "stock":
+            deduped = _drop_single_stale_stock_position(account, deduped)
+
         if deduped:
             data["accounts"][account_key]["positions"] = deduped
     return data
@@ -193,6 +196,32 @@ def _looks_like_stock_lot(position: dict[str, Any]) -> bool:
         return True
 
     return False
+
+
+def _drop_single_stale_stock_position(
+    account: dict[str, Any],
+    positions: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    expected_market_value = _as_float(account.get("market_value"))
+    if expected_market_value is None or expected_market_value <= 0 or len(positions) < 2:
+        return positions
+
+    values = [_as_float(position.get("market_value")) or 0.0 for position in positions]
+    total_market_value = sum(values)
+    tolerance = max(1.0, abs(expected_market_value) * 0.001)
+
+    if abs(total_market_value - expected_market_value) <= tolerance:
+        return positions
+    if total_market_value < expected_market_value:
+        return positions
+
+    for index, market_value in enumerate(values):
+        if market_value <= 0:
+            continue
+        if abs((total_market_value - market_value) - expected_market_value) <= tolerance:
+            return [position for pos_index, position in enumerate(positions) if pos_index != index]
+
+    return positions
 
 
 def _richness(pos: dict[str, Any]) -> int:
