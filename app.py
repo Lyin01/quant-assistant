@@ -54,13 +54,7 @@ except Exception as _imp_err:
     st.code(traceback.format_exc())
     st.stop()
 from quant_assistant.commodity_chain import chain_summary, fetch_chain_prices, list_chains
-from quant_assistant.llm_advisor import (
-    build_llm_prompt,
-    build_local_rule_advice,
-    diagnose_config,
-    load_deepseek_settings,
-    request_deepseek_advice,
-)
+from quant_assistant.llm_advisor_compat import load_llm_advisor_exports
 from quant_assistant.macro_dashboard import fetch_macro_indicators, macro_summary
 from quant_assistant.market_data import fetch_etf_ranking, fetch_history, instrument_options
 from quant_assistant.market_scanner import DEFAULT_SCAN_LIMIT, scan_etfs
@@ -75,6 +69,13 @@ from quant_assistant.recommendation_view import (
 from quant_assistant.schema import blocking_issue_count as schema_blocking_issue_count, validate_app_data
 from quant_assistant.strategy import generate_recommendations
 
+
+llm_advisor = load_llm_advisor_exports()
+build_llm_prompt = llm_advisor.build_llm_prompt
+build_local_rule_advice = llm_advisor.build_local_rule_advice
+diagnose_config = llm_advisor.diagnose_config
+load_deepseek_settings = llm_advisor.load_deepseek_settings
+request_deepseek_advice = llm_advisor.request_deepseek_advice
 
 st.set_page_config(page_title="Quant Assistant", layout="wide")
 
@@ -296,6 +297,8 @@ if page == "总览":
             data_source=data_source,
             quote_freshness=quote_freshness,
         )
+        if llm_advisor.import_error:
+            st.warning(f"LLM 辅助模块已降级加载：{llm_advisor.import_error}")
 
         if llm_settings.configured:
             st.success(f"已检测到 DeepSeek 配置，当前模型：{llm_settings.model}")
