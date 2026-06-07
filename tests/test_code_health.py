@@ -56,6 +56,16 @@ def test_verification_script_remains_read_only():
         assert forbidden not in script_text
 
 
+def test_streamlit_cloud_entrypoint_reports_import_errors():
+    root = Path(__file__).resolve().parents[1]
+    entrypoint = (root / "streamlit_app.py").read_text(encoding="utf-8")
+
+    assert "DEPLOYMENT_STAMP" in entrypoint
+    assert "except ImportError" in entrypoint
+    assert "traceback.format_exc()" in entrypoint
+    assert "st.stop()" in entrypoint
+
+
 def test_gitignore_keeps_generated_reports_ignored_and_handoff_audits_trackable():
     root = Path(__file__).resolve().parents[1]
 
