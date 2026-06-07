@@ -116,6 +116,7 @@ src/quant_assistant/
   importer.py               CSV、Excel、OCR 文本解析和持仓合并
   import_review.py          导入前校验、目标账户判定、截图解析结果合并
   market_data.py            K 线和 ETF 排行
+  macro_dashboard.py        FRED / Yahoo 宏观 fallback；AkShare 宏观数据需显式开启
   market_scanner.py         ETF 多因子扫描
   recommendation_view.py    建议展示和策略覆盖检查
   schema.py                 config / portfolio 轻量结构校验

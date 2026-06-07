@@ -106,6 +106,9 @@ Important: screenshot import now has two paths. It can run RapidOCR on uploaded 
   - `AutoProvider` default order: EastMoney and Tencent. AkShare quote fetching is opt-in with `QA_ENABLE_AKSHARE_QUOTES=1`.
 - `src\quant_assistant\market_data.py`
   - Historical K-line and ETF ranking helpers.
+- `src\quant_assistant\macro_dashboard.py`
+  - Macro dashboard uses lightweight FRED / Yahoo fallback by default.
+  - AkShare macro data is opt-in with `QA_ENABLE_AKSHARE_MACRO=1`.
 - `src\quant_assistant\analytics.py`
   - Indicators, signals, backtest, action-list formatting.
 - `src\quant_assistant\importer.py`
@@ -240,6 +243,7 @@ The parser intentionally avoids treating digits embedded in names like `中证50
    - AkShare can fail depending on network/provider behavior and is disabled by default in `auto`.
    - Auto fallback currently uses EastMoney and Tencent; enable AkShare only with explicit `QA_ENABLE_*` environment variables.
    - If live data fails, inspect `行情源状态`.
+   - Macro dashboard should still show FRED / Yahoo fallback values when AkShare macro data is disabled.
 5. Strategy coverage is currently clean, but some coverage is generic.
    - Current strategy coverage audit is documented in `reports/strategy_coverage_audit_2026-06-05.md`.
    - `沃尔核材` and `通宇通讯` are stored as `imported` but route through the generic `short_term` stock rule.

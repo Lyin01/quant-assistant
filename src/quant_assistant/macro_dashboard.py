@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import csv
+import io
 import json
 import os
+import urllib.parse
 import urllib.request
 from typing import Any
 
@@ -11,6 +14,8 @@ from .disk_cache import load_generic_cache, save_generic_cache
 
 MACRO_CACHE_KEY = "macro_indicators"
 AKSHARE_MACRO_ENABLED_ENV = "QA_ENABLE_AKSHARE_MACRO"
+FRED_GRAPH_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv"
+YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 
 
 def _safe_float(value: object) -> float | None:
@@ -44,9 +49,28 @@ def fetch_macro_indicators() -> tuple[dict[str, Any], list[str]]:
     if cached is not None:
         return cached, ["Macro: cache hit"]
 
-    if not _akshare_macro_enabled():
-        return {}, [f"AkShare macro disabled; set {AKSHARE_MACRO_ENABLED_ENV}=1 to enable."]
+    indicators: dict[str, Any] = {}
+    messages: list[str] = []
 
+    if not _akshare_macro_enabled():
+        messages.append(f"AkShare macro disabled; set {AKSHARE_MACRO_ENABLED_ENV}=1 to enable.")
+    else:
+        akshare_data, akshare_messages = _fetch_akshare_macro_indicators()
+        indicators.update(akshare_data)
+        messages.extend(akshare_messages)
+
+    fallback_data, fallback_messages = _fetch_public_macro_fallback()
+    for key, value in fallback_data.items():
+        if indicators.get(key) is None and value is not None:
+            indicators[key] = value
+    messages.extend(fallback_messages)
+
+    if indicators:
+        save_generic_cache(MACRO_CACHE_KEY, indicators)
+    return indicators, messages
+
+
+def _fetch_akshare_macro_indicators() -> tuple[dict[str, Any], list[str]]:
     try:
         import akshare as ak
     except Exception as exc:
@@ -117,8 +141,102 @@ def fetch_macro_indicators() -> tuple[dict[str, Any], list[str]]:
         if cn is not None and us is not None:
             indicators["cn_us_spread"] = round(cn - us, 2)
 
-    save_generic_cache(MACRO_CACHE_KEY, indicators)
     return indicators, messages
+
+
+def _fetch_public_macro_fallback() -> tuple[dict[str, Any], list[str]]:
+    indicators: dict[str, Any] = {}
+    messages: list[str] = []
+
+    us_10y, msg = _fetch_yahoo_latest("^TNX")
+    messages.append(msg)
+    if us_10y is None:
+        us_10y, msg = _fetch_fred_latest("DGS10")
+        messages.append(msg)
+    if us_10y is not None:
+        indicators["us_10y_bond"] = us_10y
+
+    fed_rate, msg = _fetch_fred_latest("FEDFUNDS")
+    if fed_rate is not None:
+        indicators["fed_rate"] = fed_rate
+    messages.append(msg)
+
+    us_cpi_yoy, msg = _fetch_fred_yoy("CPIAUCSL")
+    if us_cpi_yoy is not None:
+        indicators["us_cpi_yoy"] = us_cpi_yoy
+    messages.append(msg)
+
+    usdcny, msg = _fetch_yahoo_latest("USDCNY=X")
+    if usdcny is not None:
+        indicators["usdcny"] = usdcny
+    messages.append(msg)
+
+    if not indicators:
+        messages.append("Public macro fallback returned no usable data.")
+    return indicators, messages
+
+
+def _fetch_fred_latest(series_id: str) -> tuple[float | None, str]:
+    try:
+        rows = _fetch_fred_rows(series_id)
+    except Exception as exc:
+        return None, f"FRED {series_id}: {exc}"
+
+    for row in reversed(rows):
+        value = _safe_float(row.get(series_id))
+        if value is not None:
+            return value, f"FRED {series_id}: ok"
+    return None, f"FRED {series_id}: no numeric data"
+
+
+def _fetch_fred_yoy(series_id: str) -> tuple[float | None, str]:
+    try:
+        rows = _fetch_fred_rows(series_id)
+    except Exception as exc:
+        return None, f"FRED {series_id} YoY: {exc}"
+
+    values = [_safe_float(row.get(series_id)) for row in rows]
+    values = [value for value in values if value is not None and value > 0]
+    if len(values) < 13:
+        return None, f"FRED {series_id} YoY: insufficient data"
+
+    current = values[-1]
+    previous_year = values[-13]
+    return round((current / previous_year - 1) * 100, 2), f"FRED {series_id} YoY: ok"
+
+
+def _fetch_fred_rows(series_id: str) -> list[dict[str, str]]:
+    url = FRED_GRAPH_URL + "?" + urllib.parse.urlencode({"id": series_id})
+    text = _read_url_text(url, referer="https://fred.stlouisfed.org/")
+    return list(csv.DictReader(io.StringIO(text)))
+
+
+def _fetch_yahoo_latest(symbol: str) -> tuple[float | None, str]:
+    encoded_symbol = urllib.parse.quote(symbol, safe="")
+    url = YAHOO_CHART_URL.format(symbol=encoded_symbol) + "?" + urllib.parse.urlencode({"range": "5d", "interval": "1d"})
+    try:
+        payload = json.loads(_read_url_text(url, referer="https://finance.yahoo.com/"))
+        result = ((payload.get("chart") or {}).get("result") or [{}])[0]
+        quotes = (((result.get("indicators") or {}).get("quote") or [{}])[0]).get("close") or []
+        for close in reversed(quotes):
+            value = _safe_float(close)
+            if value is not None:
+                return value, f"Yahoo {symbol}: ok"
+    except Exception as exc:
+        return None, f"Yahoo {symbol}: {exc}"
+    return None, f"Yahoo {symbol}: no numeric data"
+
+
+def _read_url_text(url: str, referer: str) -> str:
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Referer": referer,
+            "User-Agent": "Mozilla/5.0 QuantAssistant/1.0",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=10) as response:
+        return response.read().decode("utf-8")
 
 
 def _akshare_macro_enabled() -> bool:
