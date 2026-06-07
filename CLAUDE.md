@@ -106,6 +106,8 @@ Important: screenshot import now has two paths. It can run RapidOCR on uploaded 
   - `AutoProvider` default order: EastMoney and Tencent. AkShare quote fetching is opt-in with `QA_ENABLE_AKSHARE_QUOTES=1`.
 - `src\quant_assistant\market_data.py`
   - Historical K-line and ETF ranking helpers.
+- `src\quant_assistant\etf_universe.py`
+  - Shared fallback ETF universe for ranking and scanner when live list APIs fail.
 - `src\quant_assistant\macro_dashboard.py`
   - Macro dashboard uses lightweight FRED / Yahoo fallback by default.
   - AkShare macro data is opt-in with `QA_ENABLE_AKSHARE_MACRO=1`.

@@ -115,6 +115,7 @@ src/quant_assistant/
   data_provider.py          EastMoney / Tencent 行情 fallback；AkShare 需显式环境变量开启
   importer.py               CSV、Excel、OCR 文本解析和持仓合并
   import_review.py          导入前校验、目标账户判定、截图解析结果合并
+  etf_universe.py           ETF 排行 / 扫描共用备用标的池
   market_data.py            K 线和 ETF 排行
   macro_dashboard.py        FRED / Yahoo 宏观 fallback；AkShare 宏观数据需显式开启
   market_scanner.py         ETF 多因子扫描

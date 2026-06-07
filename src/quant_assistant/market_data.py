@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import os
 import urllib.parse
 import urllib.request
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 import pandas as pd
 
 from .disk_cache import load_cached, save_cached
+from .etf_universe import FALLBACK_ETF_UNIVERSE, etf_secid
 
 
 AKSHARE_MARKET_DATA_ENABLED_ENV = "QA_ENABLE_AKSHARE_MARKET_DATA"
@@ -119,15 +121,21 @@ def fetch_history(
 
 def fetch_etf_ranking(limit: int = 30) -> tuple[pd.DataFrame, list[str]]:
     # EastMoney is faster (only fetches ranked data); use it first.
+    messages: list[str] = []
     try:
         frame = _fetch_eastmoney_etf_ranking(limit)
     except Exception as exc:
-        return _akshare_etf_ranking_or_empty(limit, [f"EastMoney ETF ranking failed: {exc}"])
+        messages.append(f"EastMoney ETF ranking failed: {exc}")
+    else:
+        if not frame.empty:
+            return frame, [f"EastMoney ETF ranking: {len(frame)} rows."]
+        messages.append("EastMoney ETF ranking returned no rows.")
 
+    frame, messages = _akshare_etf_ranking_or_empty(limit, messages)
     if not frame.empty:
-        return frame, [f"EastMoney ETF ranking: {len(frame)} rows."]
+        return frame, messages
 
-    return _akshare_etf_ranking_or_empty(limit, ["EastMoney ETF ranking returned no rows."])
+    return _fallback_etf_ranking(limit, messages)
 
 
 def _akshare_etf_ranking_or_empty(limit: int, messages: list[str]) -> tuple[pd.DataFrame, list[str]]:
@@ -168,6 +176,88 @@ def _akshare_etf_ranking_or_empty(limit: int, messages: list[str]) -> tuple[pd.D
         ranking = ranking.sort_values("pct", ascending=False)
     messages.append(f"AkShare ETF ranking: {len(ranking)} rows.")
     return ranking.head(limit).reset_index(drop=True), messages
+
+
+def _fallback_etf_ranking(limit: int, messages: list[str]) -> tuple[pd.DataFrame, list[str]]:
+    selected = FALLBACK_ETF_UNIVERSE[: max(1, min(limit, len(FALLBACK_ETF_UNIVERSE)))]
+    rows: list[dict[str, Any]] = []
+    failures = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(6, len(selected))) as executor:
+        futures = {
+            executor.submit(_fallback_etf_snapshot, code, name, index): code
+            for index, (code, name) in enumerate(selected)
+        }
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                row = future.result(timeout=15)
+            except Exception:
+                failures += 1
+                continue
+            rows.append(row)
+
+    if not rows:
+        messages.append("Fallback ETF ranking returned no rows.")
+        return pd.DataFrame(), messages
+
+    ranking = pd.DataFrame(rows)
+    for column in ["price", "pct", "amount", "volume", "_source_order"]:
+        if column in ranking.columns:
+            ranking[column] = pd.to_numeric(ranking[column], errors="coerce")
+    if "pct" in ranking.columns and ranking["pct"].notna().any():
+        ranking = ranking.sort_values(["pct", "_source_order"], ascending=[False, True], na_position="last")
+    else:
+        ranking = ranking.sort_values("_source_order")
+    ranking = ranking.drop(columns=["_source_order"], errors="ignore").reset_index(drop=True)
+    messages.append(f"Fallback ETF universe ranking: {len(ranking)} rows.")
+    if failures:
+        messages.append(f"Fallback ETF ranking skipped {failures} ETF(s) after data-source errors.")
+    return ranking.head(limit), messages
+
+
+def _fallback_etf_snapshot(code: str, name: str, source_order: int) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "code": code,
+        "name": name,
+        "price": None,
+        "pct": None,
+        "volume": None,
+        "amount": float(len(FALLBACK_ETF_UNIVERSE) - source_order),
+        "_source_order": source_order,
+    }
+    end = date.today()
+    start = end - timedelta(days=20)
+    try:
+        history, _messages = fetch_history(etf_secid(code), start, end, "qfq")
+    except Exception:
+        return row
+    if history.empty:
+        return row
+
+    latest = history.iloc[-1]
+    price = _safe_number(latest.get("close"))
+    pct = _safe_number(latest.get("pct"))
+    if pct is None and len(history) >= 2:
+        previous_close = _safe_number(history.iloc[-2].get("close"))
+        if price is not None and previous_close is not None and previous_close > 0:
+            pct = (price / previous_close - 1) * 100
+
+    row["price"] = price
+    row["pct"] = pct
+    row["volume"] = _safe_number(latest.get("volume"))
+    amount = _safe_number(latest.get("amount"))
+    if amount is not None:
+        row["amount"] = amount
+    return row
+
+
+def _safe_number(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if pd.isna(number):
+        return None
+    return number
 
 
 def _akshare_market_data_enabled() -> bool:
