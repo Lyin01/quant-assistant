@@ -2,6 +2,7 @@ from quant_assistant.import_review import (
     blocking_issue_count,
     detect_target_account,
     import_review_issues,
+    import_review_issues_by_account,
     merge_parsed_frames,
 )
 import pandas as pd
@@ -130,6 +131,24 @@ def test_import_review_does_not_warn_existing_imported_tag():
 
     problems = {issue["问题"] for issue in issues}
     assert "新持仓未选择策略标签" not in problems
+
+
+def test_import_review_groups_issues_by_account():
+    groups = import_review_issues_by_account(
+        {
+            "stock": [{"name": "Alpha", "tag": "imported", "market_value": 100.0}],
+            "fund": [{"name": "Existing", "tag": "imported", "market_value": 200.0, "holding_pnl_pct": 1.0}],
+            "unknown": [{"name": "Skip"}],
+        },
+        {
+            "stock": {"positions": []},
+            "fund": {"positions": [{"name": "Existing", "tag": "imported"}]},
+        },
+    )
+
+    assert set(groups) == {"stock", "fund"}
+    assert any("Alpha" in issue.values() for issue in groups["stock"])
+    assert groups["fund"] == []
 
 
 def test_merge_parsed_frames_keeps_latest_duplicate_name():

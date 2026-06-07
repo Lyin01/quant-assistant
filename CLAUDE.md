@@ -103,7 +103,7 @@ Important: screenshot import now has two paths. It can run RapidOCR on uploaded 
   - Falls back to `last_daily_pct`, `price`, `holding_pnl_pct` from `portfolio.json`.
 - `src\quant_assistant\data_provider.py`
   - Quote provider layer.
-  - `AutoProvider` fallback order: AkShare, EastMoney, Tencent.
+  - `AutoProvider` default order: EastMoney and Tencent. AkShare quote fetching is opt-in with `QA_ENABLE_AKSHARE_QUOTES=1`.
 - `src\quant_assistant\market_data.py`
   - Historical K-line and ETF ranking helpers.
 - `src\quant_assistant\analytics.py`
@@ -237,8 +237,8 @@ The parser intentionally avoids treating digits embedded in names like `中证50
    - Uploaded screenshots now have a small collapsed preview before OCR.
    - OCR import writes now persist a post-rerun success notice that points users to the change history.
 4. Verify live quote display on Streamlit Cloud.
-   - AkShare can fail depending on network/provider behavior.
-   - Auto fallback currently tries AkShare, EastMoney, Tencent.
+   - AkShare can fail depending on network/provider behavior and is disabled by default in `auto`.
+   - Auto fallback currently uses EastMoney and Tencent; enable AkShare only with explicit `QA_ENABLE_*` environment variables.
    - If live data fails, inspect `行情源状态`.
 5. Strategy coverage is currently clean, but some coverage is generic.
    - Current strategy coverage audit is documented in `reports/strategy_coverage_audit_2026-06-05.md`.

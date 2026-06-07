@@ -77,6 +77,20 @@ def import_review_issues(
     return issues
 
 
+def import_review_issues_by_account(
+    positions_by_account: dict[str, list[dict[str, Any]]],
+    accounts: dict[str, Any],
+) -> dict[str, list[dict[str, str]]]:
+    issue_groups: dict[str, list[dict[str, str]]] = {}
+    for account, positions in positions_by_account.items():
+        if account not in VALID_ACCOUNTS:
+            continue
+        account_data = accounts.get(account, {}) if isinstance(accounts, dict) else {}
+        existing_positions = account_data.get("positions", []) if isinstance(account_data, dict) else []
+        issue_groups[account] = import_review_issues(positions, account, existing_positions)
+    return issue_groups
+
+
 def merge_parsed_frames(frames: list[pd.DataFrame]) -> pd.DataFrame:
     if not frames:
         return pd.DataFrame()

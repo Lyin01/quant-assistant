@@ -33,6 +33,11 @@ from quant_assistant.auth import require_auth
 from quant_assistant.data_source_health import read_health, summarize_by_provider
 from quant_assistant.daily_brief import assess_quote_freshness, build_daily_cockpit, friendly_source_messages, is_trading_day
 from quant_assistant.data_provider import build_provider, collect_secids, quote_status
+from quant_assistant.import_review import (
+    blocking_issue_count as import_blocking_issue_count,
+    import_review_issues,
+    import_review_issues_by_account,
+)
 from quant_assistant.user_data import get_or_create_portfolio, load_config, save_portfolio, user_history_file
 try:
     from quant_assistant.importer import (
@@ -112,6 +117,19 @@ def _current_user_id() -> str:
 def _clear_session_state(keys: tuple[str, ...]) -> None:
     for key in keys:
         st.session_state.pop(key, None)
+
+
+def _render_import_review(account_label: str, issues: list[dict[str, str]]) -> int:
+    if not issues:
+        return 0
+    blockers = import_blocking_issue_count(issues)
+    if blockers:
+        st.error(f"{account_label} 导入复核发现 {blockers} 个阻断问题，请修正后再写入。")
+    else:
+        st.warning(f"{account_label} 导入复核有 {len(issues)} 条提示，写入前请快速确认。")
+    with st.expander(f"{account_label} 导入复核", expanded=bool(blockers)):
+        st.dataframe(pd.DataFrame(issues), width="stretch", hide_index=True)
+    return blockers
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -762,7 +780,15 @@ elif page == "导入持仓":
                     summary_text = "，".join(parts) if parts else "无变更"
                     st.info(f"**{acct_label}**：{summary_text} ({len(positions)} 条持仓)")
 
-                if st.button("确认写入", type="primary", key="ocr_update_btn"):
+                review_groups = import_review_issues_by_account(
+                    {acct_key: positions for acct_key, positions in write_plan},
+                    portfolio["accounts"],
+                )
+                review_blockers = 0
+                for acct_key, issues in review_groups.items():
+                    review_blockers += _render_import_review(account_labels[acct_key], issues)
+
+                if st.button("确认写入", type="primary", key="ocr_update_btn", disabled=review_blockers > 0):
                     from quant_assistant.history import record_change
 
                     for acct_key, positions in write_plan:
@@ -817,7 +843,14 @@ elif page == "导入持仓":
                 else:
                     st.info("解析结果与当前持仓一致，无变更。")
 
-                if st.button("确认写入", type="primary", key="ocr_update_btn"):
+                review_issues = import_review_issues(
+                    parsed_positions,
+                    selected_account,
+                    target_account.get("positions", []),
+                )
+                review_blockers = _render_import_review(account_labels[selected_account], review_issues)
+
+                if st.button("确认写入", type="primary", key="ocr_update_btn", disabled=review_blockers > 0):
                     from quant_assistant.history import record_change
 
                     previous_snapshot = dict(target_account)

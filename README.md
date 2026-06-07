@@ -112,7 +112,7 @@ src/quant_assistant/
   analytics_panel.py        资产分析面板数据处理
   auth.py                   Streamlit OAuth 登录
   cli.py                    命令行复盘入口
-  data_provider.py          AkShare / EastMoney / Tencent 行情 fallback
+  data_provider.py          EastMoney / Tencent 行情 fallback；AkShare 需显式环境变量开启
   importer.py               CSV、Excel、OCR 文本解析和持仓合并
   import_review.py          导入前校验、目标账户判定、截图解析结果合并
   market_data.py            K 线和 ETF 排行
