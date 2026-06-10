@@ -360,7 +360,7 @@ def _scan_one(code: str, name: str, price: float, force_refresh: bool = False) -
     cache_key = f"scanner_{code}"
     if not force_refresh:
         cached = load_generic_cache(cache_key)
-        if cached is not None:
+        if isinstance(cached, dict):
             cached["from_cache"] = True
             return cached
 
@@ -392,6 +392,7 @@ def _scan_one(code: str, name: str, price: float, force_refresh: bool = False) -
         "name": name,
         "price": scan_price,
         "score": score,
+        "from_cache": False,
         **factors,
     }
     save_generic_cache(cache_key, result)

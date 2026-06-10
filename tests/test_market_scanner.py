@@ -136,3 +136,29 @@ def test_scan_one_uses_latest_close_when_list_price_is_missing(monkeypatch):
     assert result is not None
     assert result["price"] == 2.0
     assert result["score"] == 2.0
+
+
+def test_scan_one_ignores_malformed_item_cache(monkeypatch):
+    saved = {}
+    monkeypatch.setattr(market_scanner, "load_generic_cache", lambda key: ["bad-cache"])
+    monkeypatch.setattr(market_scanner, "save_generic_cache", lambda key, value: saved.update({key: value}))
+    monkeypatch.setattr(
+        market_scanner,
+        "_fetch_tencent_klines",
+        lambda code, days=120: pd.DataFrame(
+            {
+                "date": pd.date_range("2026-01-01", periods=20),
+                "close": [1.0] * 20,
+                "volume": [100] * 20,
+            }
+        ),
+    )
+    monkeypatch.setattr(market_scanner, "compute_factors", lambda klines: {"ret_5": 1.0})
+    monkeypatch.setattr(market_scanner, "_score", lambda factors, current_price: 66.0)
+
+    result = market_scanner._scan_one("159915", "创业板ETF", 2.0)
+
+    assert result is not None
+    assert result["score"] == 66.0
+    assert result["from_cache"] is False
+    assert saved["scanner_159915"]["score"] == 66.0
