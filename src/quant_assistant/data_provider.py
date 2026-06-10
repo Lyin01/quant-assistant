@@ -207,6 +207,11 @@ class AutoProvider:
                 q, m = fn(targets)
             except Exception as exc:
                 q, m = {}, [f"{name}: failed: {exc}"]
+            if not isinstance(q, dict):
+                q = {}
+                m = _message_list(m) + [f"{name}: malformed provider result ignored."]
+            else:
+                m = _message_list(m)
             latency_ms = (time.perf_counter() - start) * 1000
             success = len(q)
             record_request(name, requested=len(targets), success=success, failed=len(targets) - success, latency_ms=latency_ms)
@@ -319,6 +324,14 @@ def quote_for_proxy(
 
 def _mapping(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _message_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    if value is None:
+        return []
+    return [str(value)]
 
 
 def quote_status(config: dict[str, Any]) -> str:

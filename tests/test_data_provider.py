@@ -85,6 +85,34 @@ def test_auto_provider_skips_akshare_by_default(monkeypatch):
     assert any("AkShare quotes disabled" in message for message in messages)
 
 
+def test_auto_provider_ignores_malformed_provider_result(monkeypatch):
+    monkeypatch.delenv("QA_ENABLE_AKSHARE_QUOTES", raising=False)
+    monkeypatch.setattr("quant_assistant.data_provider.record_request", lambda *args, **kwargs: None)
+    provider = AutoProvider()
+
+    provider.eastmoney.get_quotes_with_status = lambda secids: (None, "bad-message")
+    provider.tencent.get_quotes_with_status = lambda secids: (
+        {
+            "1.512480": Quote(
+                secid="1.512480",
+                code="512480",
+                name="Semi ETF",
+                price=2.035,
+                pct=-0.39,
+                change=-0.008,
+                time_text="2026-06-07 10:00:00",
+            )
+        },
+        ["Tencent ok"],
+    )
+
+    quotes, messages = provider.get_quotes_with_status(["1.512480"])
+
+    assert quotes["1.512480"].price == 2.035
+    assert "eastmoney: malformed provider result ignored." in messages
+    assert "Tencent ok" in messages
+
+
 def test_build_provider_uses_default_timeout_for_bad_config_value():
     from quant_assistant.data_provider import build_provider
 
