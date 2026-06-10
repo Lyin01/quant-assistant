@@ -50,8 +50,8 @@ def add_advanced_indicators(frame: pd.DataFrame) -> pd.DataFrame:
     return data
 
 
-def latest_signal(frame: pd.DataFrame) -> dict[str, Any]:
-    data = add_indicators(frame)
+def latest_signal(frame: pd.DataFrame, _pre_enriched: bool = False) -> dict[str, Any]:
+    data = frame if _pre_enriched else add_indicators(frame)
     if data.empty:
         return {"signal": "无数据", "reason": "没有历史数据。"}
 

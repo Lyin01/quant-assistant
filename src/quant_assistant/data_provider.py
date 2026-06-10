@@ -251,7 +251,9 @@ class AutoProvider:
                 quotes.update(q)
                 messages.extend(m)
 
-        # Critical: do NOT block on slow/blocked outbound requests.
+        # Cancel pending futures then shut down without blocking on in-flight requests.
+        for future in not_done:
+            future.cancel()
         executor.shutdown(wait=False)
 
         missing = sorted(set(secids) - set(quotes))

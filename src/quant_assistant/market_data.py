@@ -398,18 +398,21 @@ def _fetch_eastmoney_history(secid: str, start: date, end: date, adjust: str) ->
         fields = str(row).split(",")
         if len(fields) < 9:
             continue
-        parsed_rows.append(
-            {
-                "date": fields[0],
-                "open": fields[1],
-                "close": fields[2],
-                "high": fields[3],
-                "low": fields[4],
-                "volume": fields[5],
-                "amount": fields[6],
-                "pct": fields[8],
-            }
-        )
+        try:
+            parsed_rows.append(
+                {
+                    "date": fields[0],
+                    "open": fields[1],
+                    "close": fields[2],
+                    "high": fields[3],
+                    "low": fields[4],
+                    "volume": fields[5],
+                    "amount": fields[6],
+                    "pct": fields[8],
+                }
+            )
+        except IndexError:
+            continue
     return normalize_history(pd.DataFrame(parsed_rows))
 
 

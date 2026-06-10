@@ -266,10 +266,10 @@ def build_local_rule_advice(
     if coverage_issues:
         for issue in coverage_issues[:8]:
             lines.append(
-                f"- {issue.get('账户', issue.get('璐︽埛', '未知账户'))} / "
-                f"{issue.get('标的', issue.get('鏍囩殑', '未知标的'))}："
-                f"{issue.get('问题', issue.get('闂', '待复核'))}。"
-                f"{issue.get('建议', issue.get('寤鸿', ''))}"
+                f"- {issue.get('账户', '未知账户')} / "
+                f"{issue.get('标的', '未知标的')}："
+                f"{issue.get('问题', '待复核')}。"
+                f"{issue.get('建议', '')}"
             )
         if len(coverage_issues) > 8:
             lines.append(f"- 其余 {len(coverage_issues) - 8} 条配置提示请查看策略覆盖检查。")
