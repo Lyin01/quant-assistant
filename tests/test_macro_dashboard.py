@@ -30,6 +30,22 @@ def test_fetch_macro_indicators_uses_cache_when_akshare_disabled(monkeypatch):
     assert messages == ["Macro: cache hit"]
 
 
+def test_fetch_macro_indicators_ignores_malformed_cache(monkeypatch):
+    monkeypatch.delenv(macro_dashboard.AKSHARE_MACRO_ENABLED_ENV, raising=False)
+    monkeypatch.setattr(macro_dashboard, "load_generic_cache", lambda key: ["bad-cache"])
+    monkeypatch.setattr(
+        macro_dashboard,
+        "_fetch_public_macro_fallback",
+        lambda: ({"usdcny": 7.18}, ["Yahoo USDCNY=X: ok"]),
+    )
+
+    data, messages = macro_dashboard.fetch_macro_indicators()
+
+    assert data == {"usdcny": 7.18}
+    assert "Macro: ignored malformed cache" in messages
+    assert "Yahoo USDCNY=X: ok" in messages
+
+
 def test_public_macro_fallback_parses_fred_and_yahoo(monkeypatch):
     def fake_read_url_text(url: str, referer: str) -> str:
         if "%5ETNX" in url:

@@ -46,11 +46,13 @@ def _fetch_akshare_indicator(fetcher: str, column: str | None = None) -> tuple[f
 
 def fetch_macro_indicators() -> tuple[dict[str, Any], list[str]]:
     cached = load_generic_cache(MACRO_CACHE_KEY)
-    if cached is not None:
+    if isinstance(cached, dict):
         return cached, ["Macro: cache hit"]
 
     indicators: dict[str, Any] = {}
     messages: list[str] = []
+    if cached is not None:
+        messages.append("Macro: ignored malformed cache")
 
     if not _akshare_macro_enabled():
         messages.append(f"AkShare macro disabled; set {AKSHARE_MACRO_ENABLED_ENV}=1 to enable.")
