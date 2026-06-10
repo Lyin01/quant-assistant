@@ -26,6 +26,12 @@ def test_load_portfolio_history_missing_file(tmp_path: Path):
     assert df.empty
 
 
+def test_load_portfolio_history_directory_path_returns_empty(tmp_path: Path):
+    df = load_portfolio_history(tmp_path)
+
+    assert df.empty
+
+
 def test_load_portfolio_history_valid_records(tmp_path: Path):
     history_file = tmp_path / "portfolio_history.jsonl"
     records = [
@@ -100,6 +106,21 @@ def test_load_portfolio_history_skips_records_without_total_assets(tmp_path: Pat
     ]
     history_file.write_text("\n".join(json.dumps(r) for r in records), encoding="utf-8")
     df = load_portfolio_history(history_file)
+    assert len(df) == 1
+    assert df["total_assets"].iloc[0] == 10500.0
+
+
+def test_load_portfolio_history_skips_non_finite_total_assets(tmp_path: Path):
+    history_file = tmp_path / "portfolio_history.jsonl"
+    records = [
+        {"timestamp": "2024-01-01T10:00:00", "account": "fund", "changes": {"summary": {"total_assets": "Infinity"}}},
+        {"timestamp": "2024-01-02T10:00:00", "account": "fund", "changes": {"summary": {"total_assets": "NaN"}}},
+        {"timestamp": "2024-01-03T10:00:00", "account": "fund", "changes": {"summary": {"total_assets": 10500}}},
+    ]
+    history_file.write_text("\n".join(json.dumps(r) for r in records), encoding="utf-8")
+
+    df = load_portfolio_history(history_file)
+
     assert len(df) == 1
     assert df["total_assets"].iloc[0] == 10500.0
 

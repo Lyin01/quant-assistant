@@ -17,34 +17,40 @@ def load_portfolio_history(history_file: str | Path) -> pd.DataFrame:
         return pd.DataFrame()
 
     records = []
-    with target.open("r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rec = json.loads(line)
-                if not isinstance(rec, dict):
+    try:
+        with target.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
                     continue
-                ts = rec.get("timestamp", "")
-                timestamp = pd.to_datetime(ts, errors="coerce")
-                if pd.isna(timestamp):
+                try:
+                    rec = json.loads(line)
+                    if not isinstance(rec, dict):
+                        continue
+                    ts = rec.get("timestamp", "")
+                    timestamp = pd.to_datetime(ts, errors="coerce")
+                    if pd.isna(timestamp):
+                        continue
+                    changes = rec.get("changes", {})
+                    if not isinstance(changes, dict):
+                        continue
+                    summary = changes.get("summary", {})
+                    if not isinstance(summary, dict):
+                        continue
+                    total_assets = summary.get("total_assets")
+                    if total_assets is not None:
+                        total_assets_value = float(total_assets)
+                        if not pd.notna(total_assets_value) or total_assets_value in (float("inf"), float("-inf")):
+                            continue
+                        records.append({
+                            "timestamp": timestamp,
+                            "total_assets": total_assets_value,
+                            "account": rec.get("account", "unknown"),
+                        })
+                except (json.JSONDecodeError, TypeError, ValueError):
                     continue
-                changes = rec.get("changes", {})
-                if not isinstance(changes, dict):
-                    continue
-                summary = changes.get("summary", {})
-                if not isinstance(summary, dict):
-                    continue
-                total_assets = summary.get("total_assets")
-                if total_assets is not None:
-                    records.append({
-                        "timestamp": timestamp,
-                        "total_assets": float(total_assets),
-                        "account": rec.get("account", "unknown"),
-                    })
-            except (json.JSONDecodeError, TypeError, ValueError):
-                continue
+    except OSError:
+        return pd.DataFrame()
 
     if not records:
         return pd.DataFrame()
