@@ -137,3 +137,17 @@ def test_summarize_by_provider_unknown_provider():
     ]
     summary = summarize_by_provider(records)
     assert "unknown" in summary
+
+
+def test_summarize_by_provider_tolerates_bad_numeric_fields():
+    records = [
+        {"provider": "eastmoney", "requested": "10", "success": "bad", "latency_ms": "120.5"},
+        {"provider": "eastmoney", "requested": "bad", "success": 3, "latency_ms": None},
+        "not-a-record",
+    ]
+
+    summary = summarize_by_provider(records)
+
+    assert summary["eastmoney"]["total_requests"] == 10
+    assert summary["eastmoney"]["success_rate"] == 0.0
+    assert summary["eastmoney"]["avg_latency_ms"] == 60.25

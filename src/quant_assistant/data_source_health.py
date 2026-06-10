@@ -53,10 +53,14 @@ def summarize_by_provider(records: list[dict[str, Any]]) -> dict[str, dict[str, 
 
     stats = defaultdict(lambda: {"total_requested": 0, "total_success": 0, "total_latency": 0.0, "count": 0})
     for rec in records:
+        if not isinstance(rec, dict):
+            continue
         provider = rec.get("provider") or "unknown"
-        stats[provider]["total_requested"] += rec.get("requested", 0)
-        stats[provider]["total_success"] += rec.get("success", 0)
-        stats[provider]["total_latency"] += rec.get("latency_ms", 0)
+        requested = _non_negative_number(rec.get("requested"))
+        success = min(_non_negative_number(rec.get("success")), requested)
+        stats[provider]["total_requested"] += requested
+        stats[provider]["total_success"] += success
+        stats[provider]["total_latency"] += _non_negative_number(rec.get("latency_ms"))
         stats[provider]["count"] += 1
 
     result = {}
@@ -70,3 +74,15 @@ def summarize_by_provider(records: list[dict[str, Any]]) -> dict[str, dict[str, 
             "total_requests": requested,
         }
     return result
+
+
+def _non_negative_number(value: Any) -> float:
+    if isinstance(value, bool):
+        return 0.0
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if number < 0:
+        return 0.0
+    return number
