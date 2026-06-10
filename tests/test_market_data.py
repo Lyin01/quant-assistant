@@ -5,6 +5,11 @@ import pandas as pd
 from quant_assistant import market_data
 
 
+def test_instrument_options_ignores_bad_quotes_config_shape():
+    assert market_data.instrument_options({"quotes": "bad"}) == {}
+    assert market_data.instrument_options({"quotes": {"market": ["1.000001"], "proxies": "bad"}}) == {}
+
+
 def test_fetch_history_uses_tencent_before_disabled_akshare(monkeypatch):
     monkeypatch.delenv(market_data.AKSHARE_MARKET_DATA_ENABLED_ENV, raising=False)
     monkeypatch.setattr(market_data, "load_cached", lambda *args, **kwargs: None)

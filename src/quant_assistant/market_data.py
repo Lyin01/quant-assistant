@@ -18,11 +18,15 @@ AKSHARE_MARKET_DATA_ENABLED_ENV = "QA_ENABLE_AKSHARE_MARKET_DATA"
 
 
 def instrument_options(config: dict[str, Any]) -> dict[str, str]:
-    quotes = config.get("quotes", {})
+    quotes = _mapping(config.get("quotes"))
     options: dict[str, str] = {}
-    options.update(quotes.get("market", {}))
-    options.update(quotes.get("proxies", {}))
+    options.update(_mapping(quotes.get("market")))
+    options.update(_mapping(quotes.get("proxies")))
     return options
+
+
+def _mapping(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
 
 
 def fetch_history(

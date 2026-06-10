@@ -100,3 +100,38 @@ def test_build_provider_uses_auto_when_market_provider_is_not_a_mapping():
     provider = build_provider({"market_provider": "eastmoney"})
 
     assert isinstance(provider, AutoProvider)
+
+
+def test_collect_secids_ignores_bad_quotes_config_shape():
+    from quant_assistant.data_provider import collect_secids
+
+    portfolio = {"accounts": {"stock": {"positions": [{"market_proxy": "Semi"}]}}}
+
+    assert collect_secids({"quotes": "bad"}, portfolio) == []
+    assert collect_secids({"quotes": {"market": ["1.000001"], "proxies": ["1.512480"]}}, portfolio) == []
+
+
+def test_collect_secids_ignores_bad_portfolio_account_shape():
+    from quant_assistant.data_provider import collect_secids
+
+    config = {"quotes": {"market": {"Index": "1.000001"}, "proxies": {"Semi": "1.512480"}}}
+    portfolio = {"accounts": {"bad": "not an account", "stock": {"positions": "bad"}}}
+
+    assert collect_secids(config, portfolio) == ["1.000001", "1.512480"]
+
+
+def test_quote_for_proxy_ignores_bad_quotes_config_shape():
+    from quant_assistant.data_provider import quote_for_proxy
+
+    quote = Quote(
+        secid="1.512480",
+        code="512480",
+        name="Semi ETF",
+        price=2.035,
+        pct=-0.39,
+        change=-0.008,
+        time_text="2026-06-07 10:00:00",
+    )
+
+    assert quote_for_proxy("Semi", {"quotes": "bad"}, {"1.512480": quote}) is None
+    assert quote_for_proxy("Semi", {"quotes": {"proxies": ["1.512480"]}}, {"1.512480": quote}) is None

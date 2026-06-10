@@ -281,12 +281,21 @@ def _safe_timeout(value: Any, default: int = 8) -> int:
 
 
 def collect_secids(config: dict[str, Any], portfolio: dict[str, Any]) -> list[str]:
-    proxies = config.get("quotes", {}).get("proxies", {})
-    market = config.get("quotes", {}).get("market", {})
+    quotes_config = _mapping(config.get("quotes"))
+    proxies = _mapping(quotes_config.get("proxies"))
+    market = _mapping(quotes_config.get("market"))
     secids = list(market.values()) + list(proxies.values())
 
-    for account in portfolio.get("accounts", {}).values():
-        for position in account.get("positions", []):
+    accounts = _mapping(portfolio.get("accounts"))
+    for account in accounts.values():
+        if not isinstance(account, dict):
+            continue
+        positions = account.get("positions", [])
+        if not isinstance(positions, list):
+            continue
+        for position in positions:
+            if not isinstance(position, dict):
+                continue
             proxy_name = position.get("market_proxy")
             secid = proxies.get(proxy_name)
             if secid:
@@ -301,10 +310,15 @@ def quote_for_proxy(
 ) -> Quote | None:
     if not proxy_name:
         return None
-    secid = config.get("quotes", {}).get("proxies", {}).get(proxy_name)
+    quotes_config = _mapping(config.get("quotes"))
+    secid = _mapping(quotes_config.get("proxies")).get(proxy_name)
     if not secid:
         return None
     return quotes.get(secid)
+
+
+def _mapping(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
 
 
 def quote_status(config: dict[str, Any]) -> str:
