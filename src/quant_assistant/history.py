@@ -125,4 +125,5 @@ def rollback(history_file: str | Path) -> dict[str, Any] | None:
     history = read_history(history_file, limit=1)
     if not history:
         return None
-    return history[0].get("previous_snapshot")
+    snapshot = history[0].get("previous_snapshot")
+    return snapshot if isinstance(snapshot, dict) else None

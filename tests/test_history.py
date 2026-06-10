@@ -199,3 +199,22 @@ def test_rollback_restores_previous_snapshot():
 
         result = rollback(history_file)
         assert result == snapshot
+
+
+def test_rollback_ignores_malformed_previous_snapshot():
+    with TemporaryDirectory() as tmpdir:
+        history_file = Path(tmpdir) / "test_history.jsonl"
+        history_file.write_text(
+            json.dumps(
+                {
+                    "timestamp": "2026-01-01T10:00:00",
+                    "account": "stock",
+                    "previous_snapshot": ["bad-snapshot"],
+                },
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        assert rollback(history_file) is None
