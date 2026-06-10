@@ -143,3 +143,18 @@ def rollback(history_file: str | Path) -> dict[str, Any] | None:
         return None
     snapshot = history[0].get("previous_snapshot")
     return snapshot if isinstance(snapshot, dict) else None
+
+
+def apply_rollback_snapshot(portfolio: Any, account_key: Any, snapshot: Any) -> bool:
+    """Apply a rollback snapshot only when the current portfolio shape is safe."""
+    if not isinstance(portfolio, dict):
+        return False
+    accounts = portfolio.get("accounts")
+    if not isinstance(accounts, dict):
+        return False
+    if not isinstance(account_key, str) or not account_key or account_key not in accounts:
+        return False
+    if not isinstance(snapshot, dict):
+        return False
+    accounts[account_key] = snapshot
+    return True

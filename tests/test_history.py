@@ -2,7 +2,13 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from quant_assistant.history import compute_delta, record_change, read_history, rollback
+from quant_assistant.history import (
+    apply_rollback_snapshot,
+    compute_delta,
+    record_change,
+    read_history,
+    rollback,
+)
 
 
 def test_compute_delta_adds_updates_and_ignores_unchanged():
@@ -250,3 +256,21 @@ def test_rollback_ignores_malformed_previous_snapshot():
         )
 
         assert rollback(history_file) is None
+
+
+def test_apply_rollback_snapshot_updates_matching_account():
+    snapshot = {"positions": [{"name": "A"}]}
+    portfolio = {"accounts": {"stock": {"positions": []}}}
+
+    assert apply_rollback_snapshot(portfolio, "stock", snapshot) is True
+    assert portfolio["accounts"]["stock"] == snapshot
+
+
+def test_apply_rollback_snapshot_rejects_malformed_inputs():
+    snapshot = {"positions": []}
+
+    assert apply_rollback_snapshot({}, "stock", snapshot) is False
+    assert apply_rollback_snapshot({"accounts": []}, "stock", snapshot) is False
+    assert apply_rollback_snapshot({"accounts": {"fund": {}}}, "stock", snapshot) is False
+    assert apply_rollback_snapshot({"accounts": {"stock": {}}}, "", snapshot) is False
+    assert apply_rollback_snapshot({"accounts": {"stock": {}}}, "stock", []) is False

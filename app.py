@@ -457,7 +457,7 @@ if page == "总览":
 
     # Change history panel
     with st.expander("持仓变更记录"):
-        from quant_assistant.history import read_history, rollback
+        from quant_assistant.history import apply_rollback_snapshot, read_history, rollback
 
         history_file = user_history_file(user)
         history = read_history(history_file, limit=10)
@@ -500,8 +500,7 @@ if page == "总览":
                 restored = rollback(history_file)
                 if restored:
                     account_key = history[0].get("account") if history else None
-                    if account_key and account_key in portfolio["accounts"]:
-                        portfolio["accounts"][account_key] = restored
+                    if apply_rollback_snapshot(portfolio, account_key, restored):
                         portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
                         save_portfolio(user, portfolio)
                         reload_portfolio()
