@@ -38,6 +38,24 @@ def test_generate_daily_report_tolerates_bad_portfolio_account_shapes(monkeypatc
     assert report["summary"]["stock_assets"] == 0
 
 
+def test_generate_daily_report_tolerates_bad_recommendation_shapes(monkeypatch):
+    pipe = _pipe(recommendations=["bad", {"action": "BUY"}, {"action": "SELL", "instrument": "A", "amount": "100"}])
+    monkeypatch.setattr("quant_assistant.daily_report.run_pipeline", lambda *args, **kwargs: pipe)
+
+    report = generate_daily_report({}, {"accounts": {}}, quotes={})
+
+    assert report["summary"]["actionable_count"] == 2
+    assert any("SELL A 100" in item for item in report["今日复盘"]["规则触发"])
+
+
+def test_tomorrow_plan_tolerates_bad_recommendation_shapes():
+    pipe = _pipe(recommendations=["bad", {"action": "BUY"}, {"action": "LIMIT_BUY", "instrument": "A", "amount": "100"}])
+
+    plans = _tomorrow_plan(pipe, cash=1000)
+
+    assert any("A" in plan for plan in plans)
+
+
 def test_tomorrow_plan_adds_strategy_task_for_uncovered_risk():
     pipe = _pipe(risk_findings=["无策略覆盖: 示例持仓"])
 

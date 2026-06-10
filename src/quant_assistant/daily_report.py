@@ -38,8 +38,8 @@ def generate_daily_report(
     total_pnl = fund_pnl + stock_pnl
 
     # Actionable items
-    recs = pipe.decision_report.data.get("recommendations", [])
-    actionable = [r for r in recs if r["action"] in {"BUY", "SELL", "LIMIT_BUY"}]
+    recs = _recommendations(pipe)
+    actionable = [r for r in recs if r.get("action") in {"BUY", "SELL", "LIMIT_BUY"}]
 
     # Build report sections
     report = {
@@ -58,7 +58,10 @@ def generate_daily_report(
         },
         "今日复盘": {
             "账户表现": f"总资产 {total_assets:.2f}，今日盈亏 {total_pnl:.2f}",
-            "规则触发": [f"{r['action']} {r['instrument']} {r['amount']} — {r['reason']}" for r in actionable],
+            "规则触发": [
+                f"{r.get('action', '')} {r.get('instrument', '')} {r.get('amount', '')} — {r.get('reason', '')}"
+                for r in actionable
+            ],
             "Agent综合摘要": pipe.final_summary,
         },
         "持仓信号": {
@@ -80,6 +83,16 @@ def _account(portfolio: dict[str, Any], account_key: str) -> dict[str, Any]:
     return account if isinstance(account, dict) else {}
 
 
+def _recommendations(pipe: Any) -> list[dict[str, Any]]:
+    data = getattr(getattr(pipe, "decision_report", None), "data", {})
+    if not isinstance(data, dict):
+        return []
+    recommendations = data.get("recommendations", [])
+    if not isinstance(recommendations, list):
+        return []
+    return [item for item in recommendations if isinstance(item, dict)]
+
+
 def _number(value: Any) -> float:
     try:
         number = float(value)
@@ -93,11 +106,15 @@ def _tomorrow_plan(pipe, cash: float) -> list[str]:
     plans: list[str] = []
 
     # From decision agent
-    recs = pipe.decision_report.data.get("recommendations", [])
-    for r in recs:
-        if r["action"] == "HOLD":
+    for r in _recommendations(pipe):
+        action = str(r.get("action", ""))
+        if action == "HOLD":
             continue
-        plans.append(f"关注 {r['instrument']}: {r['action']} {r['amount']}")
+        instrument = str(r.get("instrument", "")).strip()
+        amount = str(r.get("amount", "")).strip()
+        if not instrument and not action:
+            continue
+        plans.append(f"关注 {instrument}: {action} {amount}".strip())
 
     # From risk agent
     if cash < 100:
