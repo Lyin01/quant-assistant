@@ -59,6 +59,7 @@ from quant_assistant.macro_dashboard import fetch_macro_indicators, macro_summar
 from quant_assistant.market_data import fetch_etf_ranking, fetch_history, instrument_options
 from quant_assistant.market_scanner import DEFAULT_SCAN_LIMIT, scan_etfs
 from quant_assistant.policy_radar import fetch_policy_news, summarize_policy_trends
+from quant_assistant.portfolio_view import account_positions, safe_account, safe_number
 from quant_assistant.recommendation_view import (
     fund_holdings_table,
     recommendation_table,
@@ -96,8 +97,8 @@ if data_issues:
     with st.expander("配置/持仓校验提示", expanded=False):
         st.dataframe(pd.DataFrame(data_issues), width="stretch", hide_index=True)
 
-fund = portfolio["accounts"]["fund"]
-stock = portfolio["accounts"]["stock"]
+fund = safe_account(portfolio, "fund")
+stock = safe_account(portfolio, "stock")
 options = instrument_options(config)
 
 OCR_IMPORT_STATE_KEYS = (
@@ -161,8 +162,8 @@ def cached_etf_ranking(limit: int) -> tuple[pd.DataFrame, list[str]]:
 def reload_portfolio() -> None:
     global portfolio, fund, stock
     portfolio = get_or_create_portfolio(user)
-    fund = portfolio["accounts"]["fund"]
-    stock = portfolio["accounts"]["stock"]
+    fund = safe_account(portfolio, "fund")
+    stock = safe_account(portfolio, "stock")
     cached_quotes.clear()
 
 
@@ -228,8 +229,8 @@ _title()
 
 if page == "总览":
     col1, col2 = st.columns(2)
-    col1.metric("基金资产", f'{fund["total_assets"]:,.2f}', f'{fund["today_pnl"]:,.2f}')
-    col2.metric("股票资产", f'{stock["total_assets"]:,.2f}', f'{stock["today_pnl"]:,.2f}')
+    col1.metric("基金资产", f'{safe_number(fund.get("total_assets")):,.2f}', f'{safe_number(fund.get("today_pnl")):,.2f}')
+    col2.metric("股票资产", f'{safe_number(stock.get("total_assets")):,.2f}', f'{safe_number(stock.get("today_pnl")):,.2f}')
 
     st.subheader("我的持仓数据")
     btn_col1, btn_col2 = st.columns(2)
@@ -834,7 +835,7 @@ elif page == "导入持仓":
                             change_type="ocr_import",
                             account=acct_key,
                             delta=delta,
-                            summary={"total_assets": updated_account.get("total_assets"), "total_positions": len(updated_account["positions"])},
+                            summary={"total_assets": updated_account.get("total_assets"), "total_positions": len(account_positions(updated_account))},
                             previous_snapshot=previous_snapshot,
                         )
 
@@ -885,7 +886,7 @@ elif page == "导入持仓":
                         replace_positions=True,
                         clear_existing_config=True,
                     )
-                    merged_positions = updated_account["positions"]
+                    merged_positions = account_positions(updated_account)
                     portfolio["accounts"][selected_account] = updated_account
                     portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
 

@@ -9,6 +9,8 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from .portfolio_view import account_positions, safe_account
+
 DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-pro"
 
@@ -73,11 +75,11 @@ def build_llm_context(
     quotes: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     position_strategy_tag = _load_position_strategy_tag()
-    fund = portfolio["accounts"]["fund"]
-    stock = portfolio["accounts"]["stock"]
+    fund = safe_account(portfolio, "fund")
+    stock = safe_account(portfolio, "stock")
 
-    fund_positions = [position for position in fund.get("positions", []) if isinstance(position, dict)]
-    stock_positions = [position for position in stock.get("positions", []) if isinstance(position, dict)]
+    fund_positions = account_positions(fund)
+    stock_positions = account_positions(stock)
     total_assets = _number(fund.get("total_assets")) + _number(stock.get("total_assets"))
     stock_mv = _number(stock.get("market_value"))
     stock_cash = _number(stock.get("available_cash"))

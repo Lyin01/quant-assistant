@@ -154,6 +154,17 @@ def test_build_llm_context_handles_bad_numeric_values():
     ]
 
 
+def test_build_llm_context_handles_missing_account_shapes():
+    config = {"rules": {"short_term": {}}, "quotes": {"proxies": {}}}
+
+    ctx = build_llm_context(config, {"accounts": "bad"}, recommendations=[])
+
+    assert ctx["total_assets"] == 0.0
+    assert ctx["fund"]["position_count"] == 0
+    assert ctx["stock"]["position_count"] == 0
+    assert ctx["concentration"]["top_name"] is None
+
+
 def test_build_llm_prompt_handles_bad_account_numbers():
     portfolio = {
         "accounts": {
