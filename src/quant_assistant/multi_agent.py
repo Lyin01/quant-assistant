@@ -163,9 +163,14 @@ def _decision_agent(
     portfolio: dict[str, Any],
     quotes: dict[str, Quote],
 ) -> AgentReport:
-    recs = generate_recommendations(config, portfolio, quotes)
-    actionable = [r for r in recs if r["action"] in {"BUY", "SELL", "LIMIT_BUY"}]
-    holds = [r for r in recs if r["action"] == "HOLD"]
+    recs = _recommendations(generate_recommendations(config, portfolio, quotes))
+    actionable = [
+        r
+        for r in recs
+        if r.get("action") in {"BUY", "SELL", "LIMIT_BUY"}
+        and all(key in r for key in ("instrument", "amount", "reason"))
+    ]
+    holds = [r for r in recs if r.get("action") == "HOLD"]
 
     findings: list[str] = []
     if actionable:
@@ -183,6 +188,12 @@ def _decision_agent(
     data = {"actionable_count": len(actionable), "hold_count": len(holds), "recommendations": recs}
     status = "ok" if actionable else "warn"
     return AgentReport(agent="决策Agent", status=status, findings=findings, data=data)
+
+
+def _recommendations(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
 
 
 def _account(portfolio: dict[str, Any], account_key: str) -> dict[str, Any]:

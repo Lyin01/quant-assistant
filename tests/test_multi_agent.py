@@ -60,6 +60,23 @@ def test_decision_agent_handles_bad_available_cash(monkeypatch):
     assert any("0.00" in finding for finding in report.findings)
 
 
+def test_decision_agent_tolerates_bad_recommendation_shapes(monkeypatch):
+    monkeypatch.setattr(
+        "quant_assistant.multi_agent.generate_recommendations",
+        lambda config, portfolio, quotes: [
+            "bad",
+            {"action": "BUY"},
+            {"action": "SELL", "instrument": "Test", "amount": "100", "reason": "mock"},
+        ],
+    )
+
+    report = _decision_agent({}, {"accounts": {"stock": {"available_cash": 1000}}}, quotes={})
+
+    assert report.status == "ok"
+    assert report.data["actionable_count"] == 1
+    assert any("SELL Test 100" in finding for finding in report.findings)
+
+
 def test_risk_agent_does_not_mark_short_term_fallback_positions_as_uncovered():
     config = load_json("config.json")
     portfolio = load_json("portfolio.json")
