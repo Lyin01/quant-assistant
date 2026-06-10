@@ -30,19 +30,35 @@ def _cache_path(key: str) -> Path:
     return CACHE_DIR / f"{_safe_cache_key(key)}.parquet"
 
 
+def _pickle_cache_path(key: str) -> Path:
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    return CACHE_DIR / f"{_safe_cache_key(key)}.pkl"
+
+
 def load_cached(secid: str, start: str, end: str, adjust: str) -> pd.DataFrame | None:
     key = _cache_key(secid, start, end, adjust)
     path = _cache_path(key)
-    if not path.exists():
+    pickle_path = _pickle_cache_path(key)
+    existing_path = path if path.exists() else pickle_path if pickle_path.exists() else None
+    if existing_path is None:
         return None
     # Check TTL
-    mtime = datetime.fromtimestamp(os.path.getmtime(path))
+    mtime = datetime.fromtimestamp(os.path.getmtime(existing_path))
     if datetime.now() - mtime > timedelta(days=CACHE_TTL_DAYS):
         path.unlink(missing_ok=True)
+        pickle_path.unlink(missing_ok=True)
+        return None
+    if path.exists():
+        try:
+            return pd.read_parquet(path)
+        except Exception:
+            path.unlink(missing_ok=True)
+    if not pickle_path.exists():
         return None
     try:
-        return pd.read_parquet(path)
+        return pd.read_pickle(pickle_path)
     except Exception:
+        pickle_path.unlink(missing_ok=True)
         return None
 
 
@@ -51,7 +67,15 @@ def save_cached(secid: str, start: str, end: str, adjust: str, frame: pd.DataFra
         return
     key = _cache_key(secid, start, end, adjust)
     path = _cache_path(key)
-    frame.to_parquet(path, index=False)
+    try:
+        frame.to_parquet(path, index=False)
+        _pickle_cache_path(key).unlink(missing_ok=True)
+    except Exception:
+        path.unlink(missing_ok=True)
+        try:
+            frame.to_pickle(_pickle_cache_path(key))
+        except Exception:
+            _pickle_cache_path(key).unlink(missing_ok=True)
 
 
 # Generic cache for non-DataFrame objects (dicts, lists, etc.)
@@ -103,7 +127,7 @@ def clear_expired_cache() -> int:
         return 0
     cutoff = datetime.now() - timedelta(days=CACHE_TTL_DAYS)
     removed = 0
-    for path in CACHE_DIR.glob("*.parquet"):
+    for path in list(CACHE_DIR.glob("*.parquet")) + list(CACHE_DIR.glob("*.pkl")):
         mtime = datetime.fromtimestamp(os.path.getmtime(path))
         if mtime < cutoff:
             path.unlink(missing_ok=True)

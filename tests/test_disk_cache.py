@@ -90,6 +90,24 @@ def test_save_cached_empty_frame():
     assert loaded is None
 
 
+def test_save_cached_falls_back_when_parquet_engine_is_missing(monkeypatch):
+    frame = pd.DataFrame({
+        "date": pd.date_range("2024-01-01", periods=2),
+        "close": [100, 101],
+    })
+
+    def fail_to_parquet(*args, **kwargs):
+        raise ImportError("Unable to find a usable engine")
+
+    monkeypatch.setattr(pd.DataFrame, "to_parquet", fail_to_parquet)
+
+    save_cached("1.000001", "2024-01-01", "2024-01-02", "qfq", frame)
+
+    loaded = load_cached("1.000001", "2024-01-01", "2024-01-02", "qfq")
+    assert loaded is not None
+    assert list(loaded["close"]) == [100, 101]
+
+
 def test_load_cached_expired():
     frame = pd.DataFrame({
         "date": pd.date_range("2024-01-01", periods=5),
