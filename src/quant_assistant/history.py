@@ -15,8 +15,8 @@ def compute_delta(
     imported_positions: list[dict[str, Any]],
 ) -> dict[str, list[str]]:
     """Compare existing and imported positions, return lists of added/updated/removed names."""
-    existing_by_name = {p["name"]: p for p in existing_positions if p.get("name")}
-    imported_by_name = {p["name"]: p for p in imported_positions if p.get("name")}
+    existing_by_name = {p["name"]: p for p in _named_positions(existing_positions)}
+    imported_by_name = {p["name"]: p for p in _named_positions(imported_positions)}
 
     added = []
     updated = []
@@ -33,6 +33,16 @@ def compute_delta(
             removed.append(name)
 
     return {"added": added, "updated": updated, "removed": removed}
+
+
+def _named_positions(positions: Any) -> list[dict[str, Any]]:
+    if not isinstance(positions, list):
+        return []
+    return [
+        position
+        for position in positions
+        if isinstance(position, dict) and str(position.get("name", "")).strip()
+    ]
 
 
 def _position_changed(old: dict[str, Any], new: dict[str, Any]) -> bool:

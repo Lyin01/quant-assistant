@@ -38,6 +38,25 @@ def test_compute_delta_ignores_id_and_tiny_numeric_noise():
     assert delta == {"added": [], "updated": [], "removed": []}
 
 
+def test_compute_delta_skips_malformed_positions():
+    existing = [
+        "not-a-position",
+        {"market_value": 999},
+        {"name": "A", "market_value": 100.0},
+        {"name": "Removed", "market_value": 50.0},
+    ]
+    imported = [
+        None,
+        {"name": "", "market_value": 999},
+        {"name": "A", "market_value": 100.0},
+        {"name": "New", "market_value": 25.0},
+    ]
+
+    delta = compute_delta(existing, imported)
+
+    assert delta == {"added": ["New"], "updated": [], "removed": ["Removed"]}
+
+
 def test_record_and_read_history():
     with TemporaryDirectory() as tmpdir:
         history_file = Path(tmpdir) / "test_history.jsonl"
