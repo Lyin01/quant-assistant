@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import re
 import shutil
@@ -70,6 +71,32 @@ def find_default_file(name: str) -> Path:
 
 def _default_config_path() -> Path:
     return find_default_file("config.json")
+
+
+def _default_portfolio_copy() -> dict[str, Any]:
+    return copy.deepcopy(DEFAULT_PORTFOLIO)
+
+
+def _read_json_or_backup(path: Path) -> Any | None:
+    try:
+        with path.open("r", encoding="utf-8") as file:
+            return json.load(file)
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        _backup_invalid_file(path)
+        return None
+
+
+def _backup_invalid_file(path: Path) -> None:
+    if not path.exists():
+        return
+    for index in range(1, 100):
+        backup = path.with_name(f"{path.name}.invalid-{index}")
+        if not backup.exists():
+            try:
+                path.replace(backup)
+            except OSError:
+                pass
+            return
 
 
 def _clean_portfolio(data: dict[str, Any]) -> dict[str, Any]:
@@ -289,9 +316,10 @@ def _seed_portfolio_from_global() -> dict[str, Any]:
     """Try to load the root portfolio.json as seed for new users."""
     global_path = find_default_file("portfolio.json")
     if global_path.exists():
-        with global_path.open("r", encoding="utf-8") as file:
-            return json.load(file)
-    return dict(DEFAULT_PORTFOLIO)
+        data = _read_json_or_backup(global_path)
+        if isinstance(data, dict):
+            return data
+    return _default_portfolio_copy()
 
 
 def _seed_history_if_empty(user: dict[str, Any], portfolio_data: dict[str, Any]) -> None:
@@ -305,7 +333,9 @@ def _seed_history_if_empty(user: dict[str, Any], portfolio_data: dict[str, Any])
 
     total_assets = 0.0
     for account in portfolio_data.get("accounts", {}).values():
-        total_assets += float(account.get("total_assets", 0) or 0)
+        if not isinstance(account, dict):
+            continue
+        total_assets += _as_float(account.get("total_assets")) or 0.0
 
     if total_assets > 0:
         record_change(
@@ -321,8 +351,10 @@ def get_or_create_portfolio(user: dict[str, Any]) -> dict[str, Any]:
     directory = _ensure_user_dir(user)
     path = directory / "portfolio.json"
     if path.exists():
-        with path.open("r", encoding="utf-8") as file:
-            data = json.load(file)
+        data = _read_json_or_backup(path)
+        if not isinstance(data, dict):
+            data = _seed_portfolio_from_global()
+            data["as_of"] = data.get("as_of", "") or "portfolio file was invalid; fallback data loaded"
         data = _clean_portfolio(data)
         _seed_history_if_empty(user, data)
         return data
@@ -346,13 +378,15 @@ def load_config(user: dict[str, Any]) -> dict[str, Any]:
     directory = _user_dir(user)
     user_config = directory / "config.json"
     if user_config.exists():
-        with user_config.open("r", encoding="utf-8") as file:
-            return json.load(file)
+        data = _read_json_or_backup(user_config)
+        if isinstance(data, dict):
+            return data
     # Fallback to global config.json
     global_config = _default_config_path()
     if global_config.exists():
-        with global_config.open("r", encoding="utf-8") as file:
-            return json.load(file)
+        data = _read_json_or_backup(global_config)
+        if isinstance(data, dict):
+            return data
     return {}
 
 

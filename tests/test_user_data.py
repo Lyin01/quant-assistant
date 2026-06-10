@@ -3,6 +3,38 @@ import json
 from quant_assistant import user_data
 
 
+def test_load_config_backs_up_bad_user_json_and_falls_back(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+
+    user = {"provider": "github", "id": "tester"}
+    user_dir = tmp_path / "data" / "users" / "github_tester"
+    user_dir.mkdir(parents=True, exist_ok=True)
+    (user_dir / "config.json").write_text("{bad json", encoding="utf-8")
+    (tmp_path / "config.json").write_text(json.dumps({"source": "global"}), encoding="utf-8")
+
+    config = user_data.load_config(user)
+
+    assert config == {"source": "global"}
+    assert not (user_dir / "config.json").exists()
+    assert (user_dir / "config.json.invalid-1").exists()
+
+
+def test_get_or_create_portfolio_backs_up_bad_json_and_keeps_app_bootable(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+
+    user = {"provider": "github", "id": "tester"}
+    user_dir = tmp_path / "data" / "users" / "github_tester"
+    user_dir.mkdir(parents=True, exist_ok=True)
+    (user_dir / "portfolio.json").write_text("{bad json", encoding="utf-8")
+
+    portfolio = user_data.get_or_create_portfolio(user)
+
+    assert portfolio["accounts"]["stock"]["positions"] == []
+    assert portfolio["accounts"]["fund"]["positions"] == []
+    assert not (user_dir / "portfolio.json").exists()
+    assert (user_dir / "portfolio.json.invalid-1").exists()
+
+
 def test_user_id_preserves_email_safe_characters():
     user = {"provider": "github", "email": "a.b+c-d@example.com"}
 
