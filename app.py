@@ -54,7 +54,6 @@ except Exception as _imp_err:
     st.code(traceback.format_exc())
     st.stop()
 from quant_assistant.commodity_chain import chain_summary, fetch_chain_prices, list_chains
-from quant_assistant.llm_advisor_compat import load_llm_advisor_exports
 from quant_assistant.macro_dashboard import fetch_macro_indicators, macro_summary
 from quant_assistant.market_data import fetch_etf_ranking, fetch_history, instrument_options
 from quant_assistant.market_scanner import DEFAULT_SCAN_LIMIT, scan_etfs
@@ -71,13 +70,80 @@ from quant_assistant.schema import blocking_issue_count as schema_blocking_issue
 from quant_assistant.strategy import generate_recommendations
 
 
-llm_advisor = load_llm_advisor_exports()
-build_deepseek_secrets_toml = llm_advisor.build_deepseek_secrets_toml
-build_llm_prompt = llm_advisor.build_llm_prompt
-build_local_rule_advice = llm_advisor.build_local_rule_advice
-diagnose_config = llm_advisor.diagnose_config
-load_deepseek_settings = llm_advisor.load_deepseek_settings
-request_deepseek_advice = llm_advisor.request_deepseek_advice
+# --- LLM advisor bootstrap with safe fallback ---
+# The compat layer may fail on Streamlit Cloud if llm_advisor.py has import
+# errors (e.g. missing portfolio_view).  This try/except ensures the app
+# can still start even when the LLM module is partially broken.
+try:
+    from quant_assistant.llm_advisor_compat import load_llm_advisor_exports
+
+    llm_advisor = load_llm_advisor_exports()
+    build_deepseek_secrets_toml = llm_advisor.build_deepseek_secrets_toml
+    build_llm_prompt = llm_advisor.build_llm_prompt
+    build_local_rule_advice = llm_advisor.build_local_rule_advice
+    diagnose_config = llm_advisor.diagnose_config
+    load_deepseek_settings = llm_advisor.load_deepseek_settings
+    request_deepseek_advice = llm_advisor.request_deepseek_advice
+except Exception as _llm_bootstrap_err:
+    _llm_msg = str(_llm_bootstrap_err)
+
+    class _SafeLLMStub:
+        import_error = f"LLM bootstrap failed: {_llm_msg}"
+
+    llm_advisor = _SafeLLMStub()
+
+    def build_deepseek_secrets_toml(
+        api_key_placeholder: str = "your-new-deepseek-api-key",
+        model: str = "deepseek-v4-pro",
+        base_url: str = "https://api.deepseek.com",
+    ) -> str:
+        return "\n".join([
+            f'DEEPSEEK_API_KEY = "{api_key_placeholder}"',
+            f'DEEPSEEK_BASE_URL = "{base_url.rstrip("/")}"',
+            f'DEEPSEEK_MODEL = "{model}"',
+        ])
+
+    def load_deepseek_settings(_project_root: str) -> object:
+        return type("_Settings", (), {"configured": False, "model": "unavailable"})()
+
+    def request_deepseek_advice(*_args: object, **_kwargs: object) -> str:
+        raise RuntimeError(f"LLM advisor unavailable: {_llm_msg}")
+
+    def diagnose_config(project_root: str) -> dict:
+        return {
+            "project_root": str(project_root),
+            "env_file_exists": False,
+            "env_file_path": "",
+            "dotenv_available": False,
+            "sources": {"env_var": "未检查", "streamlit_secrets": "未检查", "env_file": "未检查"},
+            "llm_advisor_import_error": _llm_msg,
+        }
+
+    def build_llm_prompt(*_args: object, **_kwargs: object) -> str:
+        return build_local_rule_advice(*_args, **_kwargs)
+
+    def build_local_rule_advice(
+        portfolio: dict,
+        actionable_recommendations: list,
+        watchlist_recommendations: list,
+        coverage_issues: list,
+        data_source: str,
+        quote_freshness: dict,
+    ) -> str:
+        accounts = portfolio.get("accounts", {})
+        fund = accounts.get("fund", {})
+        stock = accounts.get("stock", {})
+        lines = [
+            "### 本地规则摘要（非 LLM）",
+            f"- LLM 模块启动失败（{_llm_msg}），当前仅展示本地规则。",
+            f"- 数据来源：{data_source}；行情状态：{quote_freshness.get('status', '未知')}",
+            f"- 基金资产：{float(fund.get('total_assets', 0)):.2f}；股票资产：{float(stock.get('total_assets', 0)):.2f}",
+            f"- 今日动作 {len(actionable_recommendations)} 条，观察项 {len(watchlist_recommendations)} 条",
+            "",
+        ]
+        for rec in actionable_recommendations[:8]:
+            lines.append(f"- {rec.get('action','')} {rec.get('instrument','')} {rec.get('amount','')}: {rec.get('reason','')}")
+        return "\n".join(lines)
 
 st.set_page_config(page_title="Quant Assistant", layout="wide")
 
