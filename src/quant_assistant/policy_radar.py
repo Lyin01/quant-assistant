@@ -34,8 +34,8 @@ POLICY_KEYWORDS = [
 def fetch_policy_news(limit: int = 50) -> tuple[pd.DataFrame, list[str]]:
     cache_key = f"policy_news_{limit}"
     cached = load_generic_cache(cache_key)
-    if cached is not None:
-        return pd.DataFrame(cached), ["Policy: cache hit"]
+    if isinstance(cached, list):
+        return _normalize_policy_frame(cached), ["Policy: cache hit"]
 
     messages: list[str] = []
     all_news: list[dict[str, str]] = []
@@ -58,8 +58,10 @@ def fetch_policy_news(limit: int = 50) -> tuple[pd.DataFrame, list[str]]:
         item["tags"] = ", ".join(matched) if matched else ""
         item["is_policy"] = bool(matched)
 
-    df = pd.DataFrame(all_news)
-    # Sort: policy-related first, then by time
+    df = _normalize_policy_frame(all_news)
+    if df.empty:
+        return df, messages
+
     df["_sort"] = df["is_policy"].astype(int) * 2 + (df["tags"] != "").astype(int)
     df = df.sort_values("_sort", ascending=False).drop(columns=["_sort"]).reset_index(drop=True)
 
@@ -84,13 +86,11 @@ def _fetch_eastmoney_news(limit: int) -> list[dict[str, str]]:
     with urllib.request.urlopen(request, timeout=10) as response:
         raw = response.read().decode("utf-8")
 
-    # Response wrapped as: var ajaxResult={...}
-    if "{" not in raw:
-        return []
-    json_start = raw.index("{")
-    payload = json.loads(raw[json_start:])
-
+    payload = _parse_eastmoney_payload(raw)
     rows = payload.get("LivesList", [])
+    if not isinstance(rows, list):
+        return []
+
     results = []
     for row in rows:
         if isinstance(row, dict):
@@ -112,9 +112,43 @@ def _fetch_eastmoney_news(limit: int) -> list[dict[str, str]]:
     return results
 
 
+def _parse_eastmoney_payload(raw: str) -> dict[str, Any]:
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start < 0 or end <= start:
+        return {}
+    try:
+        payload = json.loads(raw[start:end + 1])
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _normalize_policy_frame(rows: list[Any]) -> pd.DataFrame:
+    normalized: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        title = str(row.get("title", "") or "").strip()
+        if not title:
+            continue
+        tags = str(row.get("tags", "") or "")
+        normalized.append(
+            {
+                "title": title,
+                "time": str(row.get("time", "") or ""),
+                "source": str(row.get("source", "") or ""),
+                "url": str(row.get("url", "") or ""),
+                "tags": tags,
+                "is_policy": bool(row.get("is_policy", bool(tags))),
+            }
+        )
+    return pd.DataFrame(normalized, columns=["title", "time", "source", "url", "tags", "is_policy"])
+
+
 def summarize_policy_trends(df: pd.DataFrame, top_n: int = 10) -> list[dict[str, Any]]:
     """Extract trending policy themes from news."""
-    if df.empty:
+    if df.empty or not {"is_policy", "tags", "title"}.issubset(df.columns):
         return []
 
     policy_df = df[df["is_policy"] == True]
