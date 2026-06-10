@@ -31,6 +31,12 @@ def test_quote_status_line_uses_configured_status_for_live_mode():
     assert "实时行情参与策略判断" in status
 
 
+def test_quote_status_line_tolerates_bad_market_provider_shape():
+    status = _quote_status_line({"market_provider": "bad"}, live=False, no_live=True)
+
+    assert "auto" in status
+
+
 def test_validation_exit_code_blocks_invalid_input():
     assert _validation_exit_code({}, {"accounts": {}}) == 2
 

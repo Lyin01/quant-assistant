@@ -73,7 +73,7 @@ def _print_report(
 
 
 def _quote_status_line(config: dict, live: bool, no_live: bool) -> str:
-    provider_name = config.get("market_provider", {}).get("name", "auto")
+    provider_name = quote_status(config).split(";", 1)[0].replace("行情源:", "").strip()
     if no_live:
         return f"行情源: {provider_name}; 未请求实时行情，策略按持仓快照判断."
     if not live:

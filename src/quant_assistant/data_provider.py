@@ -322,8 +322,9 @@ def _mapping(value: Any) -> dict[str, Any]:
 
 
 def quote_status(config: dict[str, Any]) -> str:
-    provider_name = config.get("market_provider", {}).get("name", "auto")
-    decision_mode = config.get("market_provider", {}).get("use_live_proxy_for_decisions", False)
+    provider_config = _mapping(config.get("market_provider"))
+    provider_name = provider_config.get("name", "auto")
+    decision_mode = provider_config.get("use_live_proxy_for_decisions", False)
     mode = "实时行情参与策略判断" if decision_mode else "实时行情仅展示，策略按持仓快照判断"
     return f"行情源: {provider_name}; {mode}."
 

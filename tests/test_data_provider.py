@@ -135,3 +135,11 @@ def test_quote_for_proxy_ignores_bad_quotes_config_shape():
 
     assert quote_for_proxy("Semi", {"quotes": "bad"}, {"1.512480": quote}) is None
     assert quote_for_proxy("Semi", {"quotes": {"proxies": ["1.512480"]}}, {"1.512480": quote}) is None
+
+
+def test_quote_status_uses_defaults_for_bad_market_provider_shape():
+    from quant_assistant.data_provider import quote_status
+
+    status = quote_status({"market_provider": "bad"})
+
+    assert "auto" in status

@@ -315,7 +315,7 @@ def _stock_recommendations(
 
 
 def _daily_pct(config: dict[str, Any], quotes: dict[str, Quote], position: dict[str, Any]) -> float:
-    use_live = bool(config.get("market_provider", {}).get("use_live_proxy_for_decisions", False))
+    use_live = _use_live_proxy_for_decisions(config)
     if not use_live:
         return _number(position.get("last_daily_pct"))
 
@@ -326,7 +326,7 @@ def _daily_pct(config: dict[str, Any], quotes: dict[str, Quote], position: dict[
 
 
 def _price(config: dict[str, Any], quotes: dict[str, Quote], position: dict[str, Any]) -> float:
-    use_live = bool(config.get("market_provider", {}).get("use_live_proxy_for_decisions", False))
+    use_live = _use_live_proxy_for_decisions(config)
     if use_live:
         quote = quote_for_proxy(position.get("market_proxy"), config, quotes)
         if quote and quote.price is not None:
@@ -355,7 +355,7 @@ def _live_data_missing(
     tag: str,
 ) -> bool:
     """Check if live data is configured but unavailable for this position."""
-    use_live = bool(config.get("market_provider", {}).get("use_live_proxy_for_decisions", False))
+    use_live = _use_live_proxy_for_decisions(config)
     if not use_live:
         return False
     if not strategy_requires_live_quote(tag, account_key):
@@ -365,6 +365,13 @@ def _live_data_missing(
         return True
     quote = quote_for_proxy(proxy, config, quotes)
     return quote is None or quote.pct is None
+
+
+def _use_live_proxy_for_decisions(config: dict[str, Any]) -> bool:
+    provider_config = config.get("market_provider", {})
+    if not isinstance(provider_config, dict):
+        return False
+    return bool(provider_config.get("use_live_proxy_for_decisions", False))
 
 
 def _data_warning(

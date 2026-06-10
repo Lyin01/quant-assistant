@@ -143,6 +143,16 @@ def test_generate_recommendations_tolerates_bad_numeric_values():
     assert "Bad Stock" in instruments
 
 
+def test_generate_recommendations_tolerates_bad_market_provider_shape():
+    config = load_json("config.json")
+    config["market_provider"] = "bad"
+    portfolio = load_json("portfolio.json")
+
+    recs = generate_recommendations(config, portfolio, quotes={})
+
+    assert recs
+
+
 def test_analytics_pipeline():
     frame = pd.DataFrame(
         {
