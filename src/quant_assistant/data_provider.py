@@ -60,12 +60,17 @@ class EastMoneyProvider:
         except Exception as exc:
             return {}, [f"EastMoney: request failed: {exc}"]
 
-        rows = payload.get("data", {}).get("diff") or []
+        data = payload.get("data") if isinstance(payload, dict) else None
+        rows = data.get("diff") if isinstance(data, dict) else []
+        if not isinstance(rows, list):
+            rows = []
         if not rows:
             return {}, ["EastMoney: response contained no quote rows."]
 
         quotes: dict[str, Quote] = {}
         for row in rows:
+            if not isinstance(row, dict):
+                continue
             secid = _infer_secid(row.get("f12"), params["secids"])
             timestamp = row.get("f124")
             time_text = ""
