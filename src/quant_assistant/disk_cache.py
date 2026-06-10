@@ -101,6 +101,7 @@ def load_generic_cache(key: str) -> Any | None:
             import json
             return json.load(f)
     except Exception:
+        path.unlink(missing_ok=True)
         return None
 
 
@@ -109,8 +110,11 @@ def save_generic_cache(key: str, data: Any) -> None:
         return
     path = _generic_cache_path(key)
     import json
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    try:
+        with path.open("w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        path.unlink(missing_ok=True)
 
 
 def clear_generic_cache(key: str) -> bool:

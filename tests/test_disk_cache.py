@@ -178,3 +178,20 @@ def test_clear_generic_cache_removes_existing_entry():
     assert clear_generic_cache("clear-me") is True
     assert load_generic_cache("clear-me") is None
     assert clear_generic_cache("clear-me") is False
+
+
+def test_load_generic_cache_removes_corrupt_json():
+    path = _generic_cache_path("corrupt")
+    path.write_text("{bad json", encoding="utf-8")
+
+    assert load_generic_cache("corrupt") is None
+    assert not path.exists()
+
+
+def test_save_generic_cache_ignores_unserializable_data():
+    path = _generic_cache_path("bad-data")
+
+    save_generic_cache("bad-data", {"values": {1, 2, 3}})
+
+    assert not path.exists()
+    assert load_generic_cache("bad-data") is None
