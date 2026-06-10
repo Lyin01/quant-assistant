@@ -81,9 +81,10 @@ def _data_agent(
     data: dict[str, Any] = {}
 
     # Quote coverage
-    proxies = config.get("quotes", {}).get("proxies", {})
+    proxies = _mapping(_mapping(config).get("quotes")).get("proxies", {})
+    proxies = _mapping(proxies)
     needed = set()
-    accounts = portfolio.get("accounts", {})
+    accounts = _mapping(portfolio).get("accounts", {})
     if not isinstance(accounts, dict):
         accounts = {}
     for account_key, account in accounts.items():
@@ -126,10 +127,11 @@ def _analysis_agent(
     findings: list[str] = []
     data: dict[str, Any] = {}
 
-    proxies = config.get("quotes", {}).get("proxies", {})
+    proxies = _mapping(_mapping(config).get("quotes")).get("proxies", {})
+    proxies = _mapping(proxies)
     from datetime import date, timedelta
 
-    accounts = portfolio.get("accounts", {})
+    accounts = _mapping(portfolio).get("accounts", {})
     if not isinstance(accounts, dict):
         accounts = {}
     for account in accounts.values():
@@ -196,8 +198,12 @@ def _recommendations(value: Any) -> list[dict[str, Any]]:
     return [item for item in value if isinstance(item, dict)]
 
 
+def _mapping(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
 def _account(portfolio: dict[str, Any], account_key: str) -> dict[str, Any]:
-    accounts = portfolio.get("accounts", {})
+    accounts = _mapping(portfolio).get("accounts", {})
     if not isinstance(accounts, dict):
         return {}
     account = accounts.get(account_key, {})

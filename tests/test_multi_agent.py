@@ -1,7 +1,7 @@
 import pandas as pd
 
 from quant_assistant.config import load_json
-from quant_assistant.multi_agent import _data_agent, _decision_agent, _risk_agent
+from quant_assistant.multi_agent import _analysis_agent, _data_agent, _decision_agent, _risk_agent
 
 
 def test_data_agent_does_not_flag_snapshot_only_healthcare_proxy_as_missing(monkeypatch):
@@ -43,6 +43,68 @@ def test_data_agent_skips_malformed_accounts_and_positions(monkeypatch):
 
     assert report.status in {"ok", "warn"}
     assert report.data["scan_messages"] == ["mocked"]
+
+
+def test_data_agent_handles_malformed_quotes_config(monkeypatch):
+    portfolio = {
+        "accounts": {
+            "stock": {
+                "positions": [
+                    {"name": "Bad Config Position", "tag": "short_term", "market_proxy": "半导体"},
+                ]
+            }
+        }
+    }
+
+    monkeypatch.setattr(
+        "quant_assistant.multi_agent.scan_etfs",
+        lambda top_n=10: (pd.DataFrame(), ["mocked"]),
+    )
+
+    report = _data_agent({"quotes": "bad"}, portfolio, quotes={}, scan_top_n=10)
+
+    assert report.status in {"ok", "warn"}
+    assert report.data["scan_messages"] == ["mocked"]
+
+
+def test_data_agent_handles_malformed_portfolio(monkeypatch):
+    monkeypatch.setattr(
+        "quant_assistant.multi_agent.scan_etfs",
+        lambda top_n=10: (pd.DataFrame(), ["mocked"]),
+    )
+
+    report = _data_agent({}, "bad", quotes={}, scan_top_n=10)
+
+    assert report.status == "ok"
+    assert report.data["scan_messages"] == ["mocked"]
+
+
+def test_analysis_agent_handles_malformed_quotes_config(monkeypatch):
+    def fail_fetch_history(*args, **kwargs):
+        raise AssertionError("fetch_history should not run without valid proxies")
+
+    monkeypatch.setattr("quant_assistant.multi_agent.fetch_history", fail_fetch_history)
+
+    report = _analysis_agent(
+        {"quotes": "bad"},
+        {"accounts": {"stock": {"positions": [{"name": "A", "market_proxy": "半导体"}]}}},
+        quotes={},
+    )
+
+    assert report.status == "warn"
+    assert report.findings == []
+
+
+def test_analysis_agent_handles_malformed_portfolio(monkeypatch):
+    def fail_fetch_history(*args, **kwargs):
+        raise AssertionError("fetch_history should not run without positions")
+
+    monkeypatch.setattr("quant_assistant.multi_agent.fetch_history", fail_fetch_history)
+
+    report = _analysis_agent({}, "bad", quotes={})
+
+    assert report.status == "warn"
+    assert report.findings == []
 
 
 def test_decision_agent_handles_bad_available_cash(monkeypatch):
