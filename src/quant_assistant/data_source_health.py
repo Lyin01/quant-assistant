@@ -39,10 +39,12 @@ def read_health(days: int = 7) -> list[dict[str, Any]]:
                 continue
             try:
                 rec = json.loads(line)
+                if not isinstance(rec, dict):
+                    continue
                 ts = datetime.fromisoformat(rec["timestamp"])
                 if ts >= cutoff:
                     records.append(rec)
-            except (json.JSONDecodeError, KeyError, ValueError):
+            except (json.JSONDecodeError, KeyError, TypeError, ValueError):
                 continue
     return records
 

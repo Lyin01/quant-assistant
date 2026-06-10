@@ -103,6 +103,19 @@ def test_read_health_skips_malformed_lines():
     assert len(records) >= 0  # At minimum it shouldn't crash
 
 
+def test_read_health_skips_non_object_json_lines():
+    now = datetime.now(CHINA_TZ).isoformat()
+    with open(HEALTH_FILE, "a", encoding="utf-8") as f:
+        f.write('["not", "an", "object"]\n')
+        f.write('"not an object either"\n')
+        f.write(json.dumps({"timestamp": now, "provider": "ok"}) + "\n")
+
+    records = read_health(days=7)
+
+    assert len(records) == 1
+    assert records[0]["provider"] == "ok"
+
+
 def test_summarize_by_provider():
     record_request("akshare", requested=10, success=8, failed=2, latency_ms=100.0)
     record_request("akshare", requested=10, success=9, failed=1, latency_ms=120.0)
