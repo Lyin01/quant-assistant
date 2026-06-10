@@ -57,3 +57,26 @@ def test_chain_fetch_skips_malformed_links(monkeypatch):
     assert len(prices) == 1
     assert prices[0]["环节"] == "future-link"
     assert any("skipped malformed link" in message for message in messages)
+
+
+def test_chain_summary_skips_malformed_links(monkeypatch):
+    monkeypatch.setitem(
+        commodity_chain.CHAINS,
+        "summary-bad-link-chain",
+        {
+            "description": "test",
+            "links": [
+                {"name": "missing-code", "source": "futures", "unit": "u"},
+                "not-a-link",
+                {"name": "future-link", "source": "futures", "code": "FU", "unit": "u"},
+            ],
+        },
+    )
+
+    summary = commodity_chain.chain_summary("summary-bad-link-chain")
+
+    assert summary == {
+        "name": "summary-bad-link-chain",
+        "description": "test",
+        "links": ["future-link"],
+    }

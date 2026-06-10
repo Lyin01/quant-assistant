@@ -314,8 +314,9 @@ def chain_summary(chain_name: str) -> dict[str, Any] | None:
     chain = CHAINS.get(chain_name)
     if not chain:
         return None
+    links, _messages = _valid_chain_links(chain)
     return {
         "name": chain_name,
-        "description": chain["description"],
-        "links": [link["name"] for link in chain["links"]],
+        "description": str(chain.get("description", "") or ""),
+        "links": [str(link["name"]) for link in links],
     }
