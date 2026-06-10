@@ -116,6 +116,25 @@ def test_read_history_skips_bad_lines_and_returns_newest_first():
         assert [record["timestamp"] for record in history] == ["3", "2"]
 
 
+def test_read_history_skips_non_object_json_records():
+    with TemporaryDirectory() as tmpdir:
+        history_file = Path(tmpdir) / "test_history.jsonl"
+        history_file.write_text(
+            "\n".join(
+                [
+                    json.dumps(["not", "a", "record"], ensure_ascii=False),
+                    json.dumps("not a record", ensure_ascii=False),
+                    json.dumps({"timestamp": "1", "account": "fund"}, ensure_ascii=False),
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        history = read_history(history_file)
+
+        assert history == [{"timestamp": "1", "account": "fund"}]
+
+
 def test_read_history_non_positive_limit_returns_empty_list():
     with TemporaryDirectory() as tmpdir:
         history_file = Path(tmpdir) / "test_history.jsonl"

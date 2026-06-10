@@ -92,9 +92,11 @@ def read_history(history_file: str | Path, limit: int = 50) -> list[dict[str, An
             line = line.strip()
             if line:
                 try:
-                    records.append(json.loads(line))
+                    record = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                if isinstance(record, dict):
+                    records.append(record)
     return list(reversed(records[-limit:]))
 
 
