@@ -95,6 +95,23 @@ def test_record_change_creates_parent_directory():
         assert history[0]["changes"]["updated"] == ["A"]
 
 
+def test_record_change_tolerates_bad_delta_and_summary_shapes():
+    with TemporaryDirectory() as tmpdir:
+        history_file = Path(tmpdir) / "test_history.jsonl"
+
+        record_change(
+            history_file,
+            change_type="ocr_import",
+            account="stock",
+            delta="bad-delta",
+            summary=["bad-summary"],
+        )
+
+        history = read_history(history_file)
+
+        assert history[0]["changes"] == {"added": [], "updated": [], "removed": [], "summary": {}}
+
+
 def test_history_helpers_accept_string_paths():
     with TemporaryDirectory() as tmpdir:
         history_file = Path(tmpdir) / "history.jsonl"

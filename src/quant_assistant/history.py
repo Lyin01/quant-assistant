@@ -68,15 +68,16 @@ def record_change(
     previous_snapshot: dict[str, Any] | None = None,
 ) -> None:
     """Append a change record to the history file."""
+    changes = _safe_delta(delta)
     record = {
         "timestamp": datetime.now(CHINA_TZ).isoformat(),
         "type": change_type,
         "account": account,
         "changes": {
-            "added": delta.get("added", []),
-            "updated": delta.get("updated", []),
-            "removed": delta.get("removed", []),
-            "summary": summary or {},
+            "added": changes["added"],
+            "updated": changes["updated"],
+            "removed": changes["removed"],
+            "summary": summary if isinstance(summary, dict) else {},
         },
     }
     if previous_snapshot is not None:
@@ -86,6 +87,15 @@ def record_change(
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def _safe_delta(delta: Any) -> dict[str, list[str]]:
+    if not isinstance(delta, dict):
+        return {"added": [], "updated": [], "removed": []}
+    return {
+        key: [str(item) for item in value] if isinstance(value := delta.get(key), list) else []
+        for key in ("added", "updated", "removed")
+    }
 
 
 def read_history(history_file: str | Path, limit: int = 50) -> list[dict[str, Any]]:
