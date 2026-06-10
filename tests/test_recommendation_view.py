@@ -110,6 +110,21 @@ def test_stock_holdings_table_uses_stock_specific_columns():
     assert frame.loc[0, "关联指数"] == "半导体"
 
 
+def test_holdings_tables_ignore_bad_portfolio_shapes():
+    bad_accounts = {"accounts": "bad"}
+    bad_positions = {
+        "accounts": {
+            "fund": {"positions": "bad"},
+            "stock": {"positions": ["bad"]},
+        }
+    }
+
+    assert fund_holdings_table(bad_accounts).empty
+    assert stock_holdings_table(bad_accounts).empty
+    assert fund_holdings_table(bad_positions).empty
+    assert stock_holdings_table(bad_positions).empty
+
+
 def test_strategy_coverage_ignores_imported_tag():
     """imported 是有意为之的未分类占位符，不应触发策略覆盖提示。"""
     config = {
@@ -130,6 +145,14 @@ def test_strategy_coverage_ignores_imported_tag():
     issues = strategy_coverage_issues(config, portfolio)
 
     assert len(issues) == 0
+
+
+def test_strategy_coverage_ignores_bad_config_and_portfolio_shapes():
+    assert strategy_coverage_issues({"rules": "bad", "strategy_bindings": "bad", "quotes": "bad"}, {"accounts": "bad"}) == []
+
+    portfolio = {"accounts": {"stock": "bad", "fund": {"positions": ["bad"]}}}
+
+    assert strategy_coverage_issues({"quotes": {"proxies": "bad"}}, portfolio) == []
 
 
 def test_strategy_coverage_accepts_core_ai_dca_builtin_tag():

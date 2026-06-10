@@ -79,8 +79,8 @@ TAG_DISPLAY = {
 
 def fund_holdings_table(portfolio: dict[str, Any]) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
-    account = portfolio.get("accounts", {}).get("fund", {})
-    for position in account.get("positions", []):
+    account = _account(portfolio, "fund")
+    for position in _positions(account):
         rows.append(
             {
                 "基金名称": _clean_display_name(position.get("name", "")),
@@ -111,8 +111,8 @@ _CASH_SUMMARY_NAMES = {"可用转账", "可用资金", "可用", "资金", "现�
 
 def stock_holdings_table(portfolio: dict[str, Any]) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
-    account = portfolio.get("accounts", {}).get("stock", {})
-    for position in account.get("positions", []):
+    account = _account(portfolio, "stock")
+    for position in _positions(account):
         name = str(position.get("name", "")).strip()
         if name in _CASH_SUMMARY_NAMES:
             continue
@@ -146,15 +146,18 @@ def stock_holdings_table(portfolio: dict[str, Any]) -> pd.DataFrame:
 
 
 def strategy_coverage_issues(config: dict[str, Any], portfolio: dict[str, Any]) -> list[dict[str, str]]:
-    rules = config.get("rules", {})
-    bindings = config.get("strategy_bindings", {})
+    rules = _mapping(config.get("rules"))
+    bindings = _mapping(config.get("strategy_bindings"))
     known_tags = set(rules) | set(bindings) | BUILT_IN_KNOWN_TAGS
-    proxies = config.get("quotes", {}).get("proxies", {})
+    quotes = _mapping(config.get("quotes"))
+    proxies = _mapping(quotes.get("proxies"))
     issues: list[dict[str, str]] = []
 
-    for account_key, account in portfolio.get("accounts", {}).items():
+    for account_key, account in _mapping(portfolio.get("accounts")).items():
+        if not isinstance(account, dict):
+            continue
         account_label = "股票" if account_key == "stock" else "基金" if account_key == "fund" else account_key
-        for position in account.get("positions", []):
+        for position in _positions(account):
             name = str(position.get("name", "")).strip()
             if not name:
                 continue
@@ -216,3 +219,19 @@ def _issue(account: str, instrument: str, problem: str, suggestion: str) -> dict
         "问题": problem,
         "建议": suggestion,
     }
+
+
+def _mapping(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _account(portfolio: dict[str, Any], account_key: str) -> dict[str, Any]:
+    account = _mapping(portfolio.get("accounts")).get(account_key, {})
+    return account if isinstance(account, dict) else {}
+
+
+def _positions(account: dict[str, Any]) -> list[dict[str, Any]]:
+    positions = account.get("positions", [])
+    if not isinstance(positions, list):
+        return []
+    return [position for position in positions if isinstance(position, dict)]
