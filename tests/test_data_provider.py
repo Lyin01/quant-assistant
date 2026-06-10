@@ -83,3 +83,20 @@ def test_auto_provider_skips_akshare_by_default(monkeypatch):
     assert provider.akshare is None
     assert quotes["1.512480"].price == 2.035
     assert any("AkShare quotes disabled" in message for message in messages)
+
+
+def test_build_provider_uses_default_timeout_for_bad_config_value():
+    from quant_assistant.data_provider import build_provider
+
+    provider = build_provider({"market_provider": {"name": "eastmoney", "timeout_seconds": "bad"}})
+
+    assert isinstance(provider, EastMoneyProvider)
+    assert provider.timeout == 8
+
+
+def test_build_provider_uses_auto_when_market_provider_is_not_a_mapping():
+    from quant_assistant.data_provider import build_provider
+
+    provider = build_provider({"market_provider": "eastmoney"})
+
+    assert isinstance(provider, AutoProvider)

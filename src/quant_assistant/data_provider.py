@@ -258,8 +258,10 @@ class AutoProvider:
 
 def build_provider(config: dict[str, Any]) -> AutoProvider | AkShareProvider | EastMoneyProvider | TencentProvider:
     provider_config = config.get("market_provider", {})
+    if not isinstance(provider_config, dict):
+        provider_config = {}
     name = str(provider_config.get("name", "auto")).lower()
-    timeout = int(provider_config.get("timeout_seconds", 8))
+    timeout = _safe_timeout(provider_config.get("timeout_seconds", 8))
 
     if name == "akshare":
         return AkShareProvider()
@@ -268,6 +270,14 @@ def build_provider(config: dict[str, Any]) -> AutoProvider | AkShareProvider | E
     if name == "tencent":
         return TencentProvider(timeout=timeout)
     return AutoProvider(timeout=timeout)
+
+
+def _safe_timeout(value: Any, default: int = 8) -> int:
+    try:
+        timeout = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(1, min(timeout, 60))
 
 
 def collect_secids(config: dict[str, Any], portfolio: dict[str, Any]) -> list[str]:
