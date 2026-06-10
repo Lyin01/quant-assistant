@@ -310,7 +310,7 @@ if page == "总览":
 
     with st.spinner("正在获取行情..."):
         secids = collect_secids(config, portfolio)
-        quotes, quote_messages = cached_quotes(_current_user_id(), json.dumps(config), json.dumps(sorted(set(secids))))
+        quotes, quote_messages = cached_quotes(_current_user_id(), json.dumps(config, sort_keys=True), json.dumps(sorted(set(secids))))
 
     quote_freshness = assess_quote_freshness([q.time_text for q in quotes.values() if q.time_text])
 
@@ -321,6 +321,8 @@ if page == "总览":
     data_source = "实时行情" if quotes else "持仓快照"
     actionable_recs, watchlist_recs = split_recommendations(recs)
 
+    if not quotes and is_trading_day():
+        st.warning("⚠️ 实时行情获取失败，已降级使用持仓快照。当前建议仅供参考，请刷新行情或检查网络。")
     st.subheader("今日操作清单（基于实时行情）" if quotes else "今日操作清单（降级：使用持仓快照）")
     actions = recommendation_table(actionable_recs, data_source)
     if actions.empty:

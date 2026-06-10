@@ -48,18 +48,19 @@ def load_cached(secid: str, start: str, end: str, adjust: str) -> pd.DataFrame |
         path.unlink(missing_ok=True)
         pickle_path.unlink(missing_ok=True)
         return None
-    if path.exists():
-        try:
-            return pd.read_parquet(path)
-        except Exception:
-            path.unlink(missing_ok=True)
-    if not pickle_path.exists():
-        return None
+    try:
+        return pd.read_parquet(path)
+    except FileNotFoundError:
+        pass
+    except Exception:
+        path.unlink(missing_ok=True)
     try:
         return pd.read_pickle(pickle_path)
+    except FileNotFoundError:
+        pass
     except Exception:
         pickle_path.unlink(missing_ok=True)
-        return None
+    return None
 
 
 def save_cached(secid: str, start: str, end: str, adjust: str, frame: pd.DataFrame) -> None:

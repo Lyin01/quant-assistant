@@ -432,3 +432,10 @@ def test_split_positions_by_account():
     assert "半导体" in stock_names
     assert "易方达中证500" in fund_names
     assert "天弘中证电网设备" in fund_names
+
+
+def test_generate_recommendations_empty_portfolio():
+    config = load_json("config.json")
+    portfolio = {"accounts": {"fund": {"positions": []}, "stock": {"positions": []}}}
+    recs = generate_recommendations(config, portfolio, quotes={})
+    assert isinstance(recs, list)

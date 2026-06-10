@@ -228,7 +228,7 @@ def compute_factors(klines: pd.DataFrame) -> dict[str, float]:
     delta = close.diff()
     gain = delta.where(delta > 0, 0).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-    rs = gain / loss
+    rs = gain / loss.replace(0, 1e-10)
     rsi = 100 - (100 / (1 + rs))
     rsi_value = rsi.iloc[-1]
 

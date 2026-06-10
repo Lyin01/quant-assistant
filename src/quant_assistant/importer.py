@@ -650,7 +650,7 @@ def _stock_row_from_tokens(name: str, tokens: list[dict[str, Any]]) -> dict[str,
     price_token = next(
         (
             token
-            for token in non_percent[shares_index + 1 :]
+            for token in non_percent[min(shares_index + 1, len(non_percent)):]
             if "." in token["raw"] and not token["is_signed"] and 0 < token["value"] < 1000
         ),
         None,
@@ -1088,7 +1088,7 @@ def merge_keys_match(key_a: str, key_b: str) -> bool:
     """Check if two dedup keys refer to the same fund (handles OCR truncation)."""
     if key_a == key_b:
         return True
-    if not key_a or not key_b:
+    if not key_a or not key_b or len(key_a) < 3 or len(key_b) < 3:
         return False
     shorter, longer = (key_a, key_b) if len(key_a) <= len(key_b) else (key_b, key_a)
     if len(longer) - len(shorter) <= 4 and longer.startswith(shorter):

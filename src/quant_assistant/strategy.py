@@ -22,6 +22,20 @@ def generate_recommendations(
     is_trading_day: bool = True,
 ) -> list[Recommendation]:
     quotes = quotes or {}
+    # Sanitize cash_plan numeric fields — bad values (None, "nan", inf) become 0
+    cash_plan = config.get("cash_plan")
+    if not isinstance(cash_plan, dict):
+        config = {**config, "cash_plan": {}}
+    else:
+        sanitized = {}
+        for k, v in cash_plan.items():
+            try:
+                f = float(v)
+                sanitized[k] = f if math.isfinite(f) else 0.0
+            except (TypeError, ValueError):
+                sanitized[k] = 0.0
+        if sanitized != cash_plan:
+            config = {**config, "cash_plan": sanitized}
     recommendations: list[Recommendation] = []
     _prepend_health_warning(recommendations, data_source_health)
     _prepend_trading_day_notice(recommendations, is_trading_day, quotes)
