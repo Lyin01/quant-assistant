@@ -250,6 +250,22 @@ def _fetch_link(link: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
     return None, f"{name}: {msg}"
 
 
+def _valid_chain_links(chain: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
+    links = chain.get("links")
+    if not isinstance(links, list):
+        return [], ["Chain: skipped malformed links list"]
+
+    valid: list[dict[str, Any]] = []
+    messages: list[str] = []
+    required = {"name", "source", "code", "unit"}
+    for index, link in enumerate(links):
+        if not isinstance(link, dict) or not required.issubset(link):
+            messages.append(f"Chain: skipped malformed link #{index + 1}")
+            continue
+        valid.append(link)
+    return valid, messages
+
+
 def fetch_chain_prices(chain_name: str) -> tuple[list[dict[str, Any]], list[str]]:
     cache_key = f"chain_{chain_name}"
     cached = load_generic_cache(cache_key)
@@ -261,14 +277,16 @@ def fetch_chain_prices(chain_name: str) -> tuple[list[dict[str, Any]], list[str]
         return [], [f"Unknown chain: {chain_name}"]
 
     results: list[dict[str, Any]] = []
-    messages: list[str] = []
+    links, messages = _valid_chain_links(chain)
+    if not links:
+        return [], messages or ["No valid chain links configured."]
 
     import concurrent.futures
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
         futures = {
             executor.submit(_fetch_link, link): link["name"]
-            for link in chain["links"]
+            for link in links
         }
         for future in concurrent.futures.as_completed(futures):
             name = futures[future]
