@@ -1,0 +1,7 @@
+streamlit>=1.34
+streamlit-oauth>=0.1.13
+PyJWT>=2.8.0
+akshare>=1.16
+pandas>=2.0
+plotly>=5.20
+openpyxl>=3.1

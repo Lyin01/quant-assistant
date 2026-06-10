@@ -1,0 +1,95 @@
+{
+  "market_provider": {
+    "name": "auto",
+    "timeout_seconds": 5,
+    "use_live_proxy_for_decisions": true
+  },
+  "cash_plan": {
+    "available_cash_total": 1644,
+    "minimum_cash_reserve": 5000,
+    "wide_index_budget": 4000,
+    "tactical_budget": 2500,
+    "opportunity_reserve": 1500
+  },
+  "rules": {
+    "wide_index": {
+      "deploy_when_cash_above": 3000,
+      "daily_pct_max_for_buy": 0.5,
+      "daily_pct_strong_buy": -1.0,
+      "normal_buy_amount": 1000,
+      "strong_buy_amount": 1500
+    },
+    "tactical_ai": {
+      "sell_daily_pct": 1.5,
+      "sell_profit_pct": 12.0,
+      "sell_amount": 500,
+      "absolute_sell_profit_pct": 22.0,
+      "absolute_sell_amount": 500,
+      "buy_pullback_pct": -3.0,
+      "buy_amount": 500
+    },
+    "power_grid": {
+      "sell_daily_pct": 1.5,
+      "sell_profit_pct": 12.0,
+      "sell_amount": 500
+    },
+    "military": {
+      "sell_profit_pct": 0.0,
+      "sell_amount": 500,
+      "allow_buy": false
+    },
+    "semiconductor": {
+      "limit_buy_price": 2.0,
+      "limit_buy_shares": 100,
+      "stop_chasing_price": 2.03,
+      "max_position_shares": 300
+    },
+    "robot": {
+      "sell_profit_pct": 12.0,
+      "sell_shares": 100,
+      "sell_profit_pct_tier2": 18.0,
+      "sell_shares_tier2": 200,
+      "pullback_buy_price_low": 1.08,
+      "pullback_buy_price_high": 1.10,
+      "pullback_buy_shares": 100
+    },
+    "overseas": {
+      "sell_daily_pct": 2.0,
+      "sell_profit_pct": 15.0,
+      "sell_amount": 500
+    },
+    "short_term": {
+      "stop_loss_pct": -10.0,
+      "sell_profit_pct": 10.0,
+      "sell_shares": 100
+    },
+    "healthcare": {
+      "sell_profit_pct": 10.0,
+      "sell_shares": 100
+    },
+    "defensive": {
+      "rebalance_profit_pct": 5.0
+    }
+  },
+  "quotes": {
+    "market": {
+      "上证指数": "1.000001",
+      "深证成指": "0.399001",
+      "创业板指": "0.399006",
+      "科创50": "1.000688"
+    },
+    "proxies": {
+      "中证500": "1.000905",
+      "中证A500": "1.000510",
+      "人工智能": "1.515070",
+      "半导体": "1.512480",
+      "芯片": "0.159995",
+      "机器人": "1.562500",
+      "军工": "1.512660",
+      "电网设备": "1.561700",
+      "纳指": "0.159941",
+      "标普500": "1.513500",
+      "创新药": "1.599929"
+    }
+  }
+}

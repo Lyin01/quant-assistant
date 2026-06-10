@@ -1,0 +1,4 @@
+# Optional OCR dependencies — install only if you need screenshot import.
+# pip install -r requirements-ocr.txt
+opencv-python-headless>=4.8
+rapidocr-onnxruntime>=1.3

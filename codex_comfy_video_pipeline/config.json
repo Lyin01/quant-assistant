@@ -1,0 +1,37 @@
+{
+  "paths": {
+    "comfyui_models": "E:\\ComfyUI_models",
+    "runs_dir": "E:\\PROJECT FROM CODEX\\codex_comfy_video_pipeline\\runs",
+    "workflow_dir": "E:\\PROJECT FROM CODEX\\codex_comfy_video_pipeline\\workflows",
+    "ffmpeg": "E:\\PROJECT FROM CODEX\\tools\\ffmpeg\\ffmpeg-8.1.1-essentials_build\\bin\\ffmpeg.exe",
+    "comfyui_start_script": "E:\\PROJECT FROM CODEX\\tools\\ComfyUI\\start_codex_comfyui.ps1"
+  },
+  "comfyui": {
+    "base_url": "http://127.0.0.1:8188",
+    "client_id": "codex-video-pipeline",
+    "timeout_seconds": 900,
+    "text_to_image_workflow": "flux_text_to_image.api.json",
+    "image_to_video_workflow": "wan_text_to_video_api.api.json",
+    "prompt_node_id": "6",
+    "negative_prompt_node_id": "7",
+    "seed_node_id": "3",
+    "width_node_id": "5",
+    "width": 720,
+    "height": 1280
+  },
+  "hyperframes": {
+    "mode": "mock",
+    "command": "hyperframes",
+    "endpoint": "http://127.0.0.1:8791",
+    "timeout_seconds": 600
+  },
+  "render": {
+    "fps": 24,
+    "scene_seconds": 4,
+    "aspect_ratio": "9:16"
+  },
+  "quality": {
+    "max_refine_attempts": 2,
+    "min_file_bytes": 4096
+  }
+}

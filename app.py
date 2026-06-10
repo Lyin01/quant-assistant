@@ -523,57 +523,64 @@ if page == "总览":
 
     # Change history panel
     with st.expander("持仓变更记录"):
-        from quant_assistant.history import apply_rollback_snapshot, read_history, rollback
+        try:
+            from quant_assistant.history import apply_rollback_snapshot, read_history, rollback
+            _history_available = True
+        except ImportError:
+            _history_available = False
 
-        history_file = user_history_file(user)
-        history = read_history(history_file, limit=10)
-
-        if not history:
-            st.info("暂无变更记录。导入持仓后会自动记录。")
+        if not _history_available:
+            st.warning("历史记录模块暂不可用，请检查部署版本是否包含最新代码。")
         else:
-            for record in history:
-                ts = record.get("timestamp", "")[:16].replace("T", " ")
-                account = "股票" if record.get("account") == "stock" else "基金"
-                changes = record.get("changes", {})
-                added = changes.get("added", [])
-                updated = changes.get("updated", [])
-                removed = changes.get("removed", [])
+            history_file = user_history_file(user)
+            history = read_history(history_file, limit=10)
 
-                parts = []
-                if added:
-                    parts.append(f"新增 {len(added)} 条")
-                if updated:
-                    parts.append(f"更新 {len(updated)} 条")
-                if removed:
-                    parts.append(f"移除 {len(removed)} 条")
+            if not history:
+                st.info("暂无变更记录。导入持仓后会自动记录。")
+            else:
+                for record in history:
+                    ts = record.get("timestamp", "")[:16].replace("T", " ")
+                    account = "股票" if record.get("account") == "stock" else "基金"
+                    changes = record.get("changes", {})
+                    added = changes.get("added", [])
+                    updated = changes.get("updated", [])
+                    removed = changes.get("removed", [])
 
-                summary_text = "，".join(parts) if parts else "无变更"
-                st.write(f"**{ts}** | {account} | {record.get('type', 'unknown')} | {summary_text}")
+                    parts = []
+                    if added:
+                        parts.append(f"新增 {len(added)} 条")
+                    if updated:
+                        parts.append(f"更新 {len(updated)} 条")
+                    if removed:
+                        parts.append(f"移除 {len(removed)} 条")
 
-                detail_parts = []
-                if added:
-                    detail_parts.append(f"新增: {', '.join(added)}")
-                if updated:
-                    detail_parts.append(f"更新: {', '.join(updated)}")
-                if removed:
-                    detail_parts.append(f"移除: {', '.join(removed)}")
-                if detail_parts:
-                    st.caption("  ".join(detail_parts))
+                    summary_text = "，".join(parts) if parts else "无变更"
+                    st.write(f"**{ts}** | {account} | {record.get('type', 'unknown')} | {summary_text}")
 
-            # Rollback button
-            st.divider()
-            if st.button("撤销上次导入", help="恢复到上一次导入前的持仓状态"):
-                restored = rollback(history_file)
-                if restored:
-                    account_key = history[0].get("account") if history else None
-                    if apply_rollback_snapshot(portfolio, account_key, restored):
-                        portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
-                        save_portfolio(user, portfolio)
-                        reload_portfolio()
-                        st.success(f"已撤销上次导入，{account_key} 持仓已恢复。")
-                        st.rerun()
-                else:
-                    st.warning("无可用的历史记录用于撤销。")
+                    detail_parts = []
+                    if added:
+                        detail_parts.append(f"新增: {', '.join(added)}")
+                    if updated:
+                        detail_parts.append(f"更新: {', '.join(updated)}")
+                    if removed:
+                        detail_parts.append(f"移除: {', '.join(removed)}")
+                    if detail_parts:
+                        st.caption("  ".join(detail_parts))
+
+                # Rollback button
+                st.divider()
+                if st.button("撤销上次导入", help="恢复到上一次导入前的持仓状态"):
+                    restored = rollback(history_file)
+                    if restored:
+                        account_key = history[0].get("account") if history else None
+                        if apply_rollback_snapshot(portfolio, account_key, restored):
+                            portfolio["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+                            save_portfolio(user, portfolio)
+                            reload_portfolio()
+                            st.success(f"已撤销上次导入，{account_key} 持仓已恢复。")
+                            st.rerun()
+                    else:
+                        st.warning("无可用的历史记录用于撤销。")
 
 elif page == "历史 K 线":
     st.subheader("历史 K 线")

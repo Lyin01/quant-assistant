@@ -1,0 +1,689 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>四冲程活塞发动机剖面动画</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101113;
+      --panel: #181a1f;
+      --ink: #eef2f5;
+      --muted: #9ba5ad;
+      --line: #303741;
+      --steel: #aeb8c0;
+      --blue: #3da5ff;
+      --orange: #ff9f24;
+      --yellow: #ffd35a;
+      --exhaust: #8f969c;
+      --green: #63d38a;
+      --red: #ff6b64;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+      background:
+        radial-gradient(circle at 22% 16%, rgba(61, 165, 255, 0.10), transparent 34%),
+        linear-gradient(145deg, #0d0e10 0%, var(--bg) 50%, #151317 100%);
+      color: var(--ink);
+      font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+      overflow: hidden;
+    }
+
+    main {
+      min-height: 100%;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 12px;
+      padding: clamp(14px, 2vw, 26px);
+    }
+
+    header,
+    footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      max-width: 1180px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(20px, 3vw, 34px);
+      font-weight: 750;
+      letter-spacing: 0;
+    }
+
+    .subhead {
+      margin: 5px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .status {
+      min-width: 210px;
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      background: rgba(24, 26, 31, 0.78);
+      padding: 12px 14px;
+      border-radius: 8px;
+      text-align: right;
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
+    }
+
+    .stroke-name {
+      font-size: 22px;
+      font-weight: 800;
+    }
+
+    .stroke-note {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .stage {
+      position: relative;
+      max-width: 1180px;
+      width: 100%;
+      height: min(70vh, 720px);
+      min-height: 510px;
+      margin: 0 auto;
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      border-radius: 8px;
+      background:
+        linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+        linear-gradient(0deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+        rgba(13, 15, 18, 0.76);
+      background-size: 44px 44px;
+      overflow: hidden;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.34);
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 16px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      white-space: nowrap;
+    }
+
+    .swatch {
+      width: 18px;
+      height: 10px;
+      border-radius: 2px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    button {
+      width: 40px;
+      height: 34px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 6px;
+      background: #20242b;
+      color: var(--ink);
+      cursor: pointer;
+      font-size: 16px;
+    }
+
+    input[type="range"] {
+      width: 150px;
+      accent-color: var(--blue);
+    }
+
+    @media (max-width: 760px) {
+      body {
+        overflow: auto;
+      }
+
+      main {
+        min-height: 100%;
+      }
+
+      header,
+      footer {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .status {
+        text-align: left;
+        width: 100%;
+      }
+
+      .stage {
+        height: 64vh;
+        min-height: 500px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>四冲程活塞发动机剖面动画</h1>
+        <p class="subhead">进气 → 压缩 → 动力 → 排气，曲轴每两圈完成一个无缝循环。</p>
+      </div>
+      <div class="status" aria-live="polite">
+        <div id="strokeName" class="stroke-name">进气冲程</div>
+        <div id="strokeNote" class="stroke-note">进气门开启，蓝色空气进入气缸</div>
+      </div>
+    </header>
+
+    <section class="stage" aria-label="四冲程发动机剖面动画">
+      <canvas id="engine"></canvas>
+    </section>
+
+    <footer>
+      <div class="legend" aria-label="颜色图例">
+        <span><i class="swatch" style="background:#3da5ff"></i>进气空气</span>
+        <span><i class="swatch" style="background:linear-gradient(90deg,#ffd35a,#ff8c1a)"></i>燃烧火焰</span>
+        <span><i class="swatch" style="background:#8f969c"></i>排气</span>
+        <span><i class="swatch" style="background:#aeb8c0"></i>金属机构</span>
+      </div>
+      <div class="controls">
+        <button id="toggle" type="button" aria-label="暂停或播放">Ⅱ</button>
+        <label for="speed">速度</label>
+        <input id="speed" type="range" min="0.35" max="1.8" step="0.05" value="1" />
+      </div>
+    </footer>
+  </main>
+
+  <script>
+    const canvas = document.getElementById("engine");
+    const ctx = canvas.getContext("2d");
+    const strokeName = document.getElementById("strokeName");
+    const strokeNote = document.getElementById("strokeNote");
+    const toggle = document.getElementById("toggle");
+    const speed = document.getElementById("speed");
+
+    const TAU = Math.PI * 2;
+    const STROKES = [
+      {
+        name: "进气冲程",
+        note: "进气门开启，蓝色空气进入气缸",
+        color: "#3da5ff",
+        phase: "intake"
+      },
+      {
+        name: "压缩冲程",
+        note: "双阀关闭，混合气被压缩",
+        color: "#89cfff",
+        phase: "compression"
+      },
+      {
+        name: "动力冲程",
+        note: "火花点燃混合气，火焰推动活塞下行",
+        color: "#ff9f24",
+        phase: "power"
+      },
+      {
+        name: "排气冲程",
+        note: "排气门开启，灰色废气排出",
+        color: "#8f969c",
+        phase: "exhaust"
+      }
+    ];
+
+    let running = true;
+    let last = performance.now();
+    let crankAngle = 0;
+
+    toggle.addEventListener("click", () => {
+      running = !running;
+      toggle.textContent = running ? "Ⅱ" : "▶";
+    });
+
+    function resize() {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+      canvas.width = Math.round(rect.width * dpr);
+      canvas.height = Math.round(rect.height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    window.addEventListener("resize", resize);
+    resize();
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function easeInOut(t) {
+      return t * t * (3 - 2 * t);
+    }
+
+    function phaseInfo(angle) {
+      const cycle = (angle % (TAU * 2) + TAU * 2) % (TAU * 2);
+      const index = Math.floor(cycle / Math.PI);
+      const local = (cycle % Math.PI) / Math.PI;
+      return { cycle, index, local, stroke: STROKES[index] };
+    }
+
+    function pistonPosition(angle, geom) {
+      const a = angle - Math.PI / 2;
+      const horizontal = geom.crank * Math.cos(a);
+      const vertical = geom.crank * Math.sin(a) + Math.sqrt(
+        geom.rod * geom.rod - horizontal * horizontal
+      );
+      const verticalMin = -geom.crank + Math.sqrt(geom.rod * geom.rod);
+      const travel = vertical - verticalMin;
+      return geom.topY + travel;
+    }
+
+    function roundedRect(x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+
+    function line(x1, y1, x2, y2) {
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+
+    function arrow(fromX, fromY, toX, toY, color, width) {
+      const angle = Math.atan2(toY - fromY, toX - fromX);
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.lineWidth = width;
+      ctx.lineCap = "round";
+      line(fromX, fromY, toX, toY);
+      ctx.beginPath();
+      ctx.moveTo(toX, toY);
+      ctx.lineTo(toX - 13 * Math.cos(angle - 0.45), toY - 13 * Math.sin(angle - 0.45));
+      ctx.lineTo(toX - 13 * Math.cos(angle + 0.45), toY - 13 * Math.sin(angle + 0.45));
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawLabel(text, x, y, color, align = "center") {
+      ctx.save();
+      ctx.font = "700 14px Segoe UI, Microsoft YaHei, sans-serif";
+      ctx.textAlign = align;
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = color;
+      ctx.fillText(text, x, y);
+      ctx.restore();
+    }
+
+    function drawGas(geom, pistonY, info, time) {
+      const chamberTop = geom.headY + 12;
+      const chamberBottom = pistonY - geom.pistonH / 2;
+      const chamberH = Math.max(10, chamberBottom - chamberTop);
+      const local = info.local;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(geom.cylX - geom.bore / 2 + 9, chamberTop, geom.bore - 18, chamberH);
+      ctx.clip();
+
+      if (info.stroke.phase === "intake") {
+        const fill = ctx.createLinearGradient(0, chamberTop, 0, chamberBottom);
+        fill.addColorStop(0, "rgba(61,165,255,0.44)");
+        fill.addColorStop(1, "rgba(61,165,255,0.14)");
+        ctx.fillStyle = fill;
+        ctx.fillRect(geom.cylX - geom.bore / 2, chamberTop, geom.bore, chamberH);
+        for (let i = 0; i < 12; i++) {
+          const px = geom.cylX - geom.bore / 2 + 24 + ((i * 31 + time * 0.05) % (geom.bore - 48));
+          const py = chamberTop + 18 + ((i * 43 + time * 0.08) % Math.max(22, chamberH - 36));
+          ctx.fillStyle = `rgba(120,200,255,${0.12 + 0.18 * Math.sin(time * 0.004 + i)})`;
+          ctx.beginPath();
+          ctx.arc(px, py, 8 + (i % 3), 0, TAU);
+          ctx.fill();
+        }
+      }
+
+      if (info.stroke.phase === "compression") {
+        const pulse = 0.25 + 0.35 * easeInOut(local);
+        const fill = ctx.createLinearGradient(0, chamberTop, 0, chamberBottom);
+        fill.addColorStop(0, `rgba(73,169,255,${pulse})`);
+        fill.addColorStop(1, `rgba(255,211,90,${0.05 + local * 0.16})`);
+        ctx.fillStyle = fill;
+        ctx.fillRect(geom.cylX - geom.bore / 2, chamberTop, geom.bore, chamberH);
+      }
+
+      if (info.stroke.phase === "power") {
+        const burn = clamp(1 - local * 0.85, 0.1, 1);
+        const grd = ctx.createRadialGradient(
+          geom.cylX, chamberTop + chamberH * 0.34, 10,
+          geom.cylX, chamberTop + chamberH * 0.38, geom.bore * 0.55
+        );
+        grd.addColorStop(0, `rgba(255,245,145,${0.85 * burn})`);
+        grd.addColorStop(0.42, `rgba(255,143,26,${0.66 * burn})`);
+        grd.addColorStop(1, `rgba(255,65,36,${0.08 * burn})`);
+        ctx.fillStyle = grd;
+        ctx.fillRect(geom.cylX - geom.bore / 2, chamberTop, geom.bore, chamberH);
+
+        ctx.strokeStyle = `rgba(255,218,92,${0.75 * burn})`;
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 7; i++) {
+          const x = geom.cylX + Math.sin(time * 0.006 + i) * geom.bore * 0.22;
+          const y = chamberTop + 18 + (i / 7) * chamberH * 0.72;
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.lineTo(x + Math.sin(i * 2.1) * 18, y + 20);
+          ctx.stroke();
+        }
+      }
+
+      if (info.stroke.phase === "exhaust") {
+        const fill = ctx.createLinearGradient(0, chamberTop, 0, chamberBottom);
+        fill.addColorStop(0, "rgba(143,150,156,0.46)");
+        fill.addColorStop(1, "rgba(143,150,156,0.18)");
+        ctx.fillStyle = fill;
+        ctx.fillRect(geom.cylX - geom.bore / 2, chamberTop, geom.bore, chamberH);
+        for (let i = 0; i < 14; i++) {
+          const px = geom.cylX - geom.bore / 2 + 18 + ((i * 29 - time * 0.035) % (geom.bore - 36));
+          const py = chamberTop + 14 + ((i * 37 + time * 0.055) % Math.max(20, chamberH - 28));
+          ctx.fillStyle = `rgba(190,195,198,${0.08 + 0.16 * Math.sin(time * 0.004 + i)})`;
+          ctx.beginPath();
+          ctx.arc(px, py, 7 + (i % 4), 0, TAU);
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+    }
+
+    function drawPorts(geom, info, time) {
+      const intakeOpen = info.stroke.phase === "intake";
+      const exhaustOpen = info.stroke.phase === "exhaust";
+      const valveLift = 22;
+      const intakeY = geom.headY + 20 + (intakeOpen ? valveLift : 0);
+      const exhaustY = geom.headY + 20 + (exhaustOpen ? valveLift : 0);
+
+      ctx.save();
+      ctx.lineWidth = 12;
+      ctx.lineCap = "round";
+      ctx.strokeStyle = "#3d454f";
+      line(geom.cylX - 172, geom.headY + 18, geom.cylX - 72, geom.headY + 18);
+      line(geom.cylX + 72, geom.headY + 18, geom.cylX + 172, geom.headY + 18);
+
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = intakeOpen ? "#3da5ff" : "#64707a";
+      line(geom.cylX - 64, geom.headY + 1, geom.cylX - 26, intakeY + 18);
+      ctx.fillStyle = intakeOpen ? "#3da5ff" : "#87919a";
+      roundedRect(geom.cylX - 36, intakeY + 17, 38, 8, 4);
+      ctx.fill();
+
+      ctx.strokeStyle = exhaustOpen ? "#a2a7ab" : "#64707a";
+      line(geom.cylX + 64, geom.headY + 1, geom.cylX + 26, exhaustY + 18);
+      ctx.fillStyle = exhaustOpen ? "#a2a7ab" : "#87919a";
+      roundedRect(geom.cylX - 2, exhaustY + 17, 38, 8, 4);
+      ctx.fill();
+
+      if (intakeOpen) {
+        const pulse = 0.55 + 0.35 * Math.sin(time * 0.008);
+        arrow(geom.cylX - 166, geom.headY + 18, geom.cylX - 70, geom.headY + 18, `rgba(61,165,255,${pulse})`, 5);
+        arrow(geom.cylX - 50, geom.headY + 25, geom.cylX - 16, geom.headY + 52, `rgba(61,165,255,${pulse})`, 4);
+      }
+
+      if (exhaustOpen) {
+        const pulse = 0.50 + 0.30 * Math.sin(time * 0.008 + 1);
+        arrow(geom.cylX + 20, geom.headY + 52, geom.cylX + 56, geom.headY + 25, `rgba(170,174,177,${pulse})`, 4);
+        arrow(geom.cylX + 72, geom.headY + 18, geom.cylX + 168, geom.headY + 18, `rgba(170,174,177,${pulse})`, 5);
+      }
+
+      drawLabel("进气", geom.cylX - 126, geom.headY - 16, intakeOpen ? "#3da5ff" : "#69737c");
+      drawLabel("排气", geom.cylX + 126, geom.headY - 16, exhaustOpen ? "#b5babd" : "#69737c");
+      ctx.restore();
+    }
+
+    function drawSpark(geom, info, time) {
+      ctx.save();
+      ctx.strokeStyle = "#e7edf2";
+      ctx.lineWidth = 3;
+      line(geom.cylX, geom.headY - 28, geom.cylX, geom.headY + 18);
+      ctx.fillStyle = "#e7edf2";
+      ctx.beginPath();
+      ctx.arc(geom.cylX, geom.headY + 18, 5, 0, TAU);
+      ctx.fill();
+
+      const sparkMoment = info.stroke.phase === "power" && info.local < 0.20;
+      if (sparkMoment) {
+        const glow = 1 - info.local / 0.20;
+        ctx.strokeStyle = `rgba(255,236,117,${glow})`;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(geom.cylX - 16, geom.headY + 30);
+        ctx.lineTo(geom.cylX - 4, geom.headY + 20);
+        ctx.lineTo(geom.cylX + 3, geom.headY + 34);
+        ctx.lineTo(geom.cylX + 16, geom.headY + 21);
+        ctx.stroke();
+        ctx.fillStyle = `rgba(255,178,36,${0.35 * glow})`;
+        ctx.beginPath();
+        ctx.arc(geom.cylX, geom.headY + 26, 30 + 7 * Math.sin(time * 0.03), 0, TAU);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    function drawEngine(time) {
+      const w = canvas.clientWidth;
+      const h = canvas.clientHeight;
+      ctx.clearRect(0, 0, w, h);
+
+      const scale = clamp(Math.min(w / 980, h / 680), 0.72, 1.12);
+      const geom = {
+        cylX: w * 0.50,
+        headY: h * 0.11,
+        topY: h * 0.20,
+        bore: 190 * scale,
+        pistonH: 72 * scale,
+        pistonW: 166 * scale,
+        crank: 78 * scale,
+        rod: 245 * scale,
+        crankX: w * 0.50,
+        crankY: h * 0.78
+      };
+
+      const pistonY = pistonPosition(crankAngle, geom);
+      const info = phaseInfo(crankAngle);
+      const local = info.local;
+      strokeName.textContent = info.stroke.name;
+      strokeName.style.color = info.stroke.color;
+      strokeNote.textContent = info.stroke.note;
+
+      const crankVisual = crankAngle - Math.PI / 2;
+      const pinX = geom.crankX + geom.crank * Math.cos(crankVisual);
+      const pinY = geom.crankY + geom.crank * Math.sin(crankVisual);
+      const wristX = geom.cylX;
+      const wristY = pistonY + geom.pistonH * 0.30;
+
+      ctx.save();
+      ctx.translate(0.5, 0.5);
+
+      ctx.strokeStyle = "rgba(255,255,255,0.05)";
+      ctx.lineWidth = 1;
+      for (let x = 0; x < w; x += 44) line(x, 0, x, h);
+      for (let y = 0; y < h; y += 44) line(0, y, w, y);
+
+      drawPorts(geom, info, time);
+
+      ctx.save();
+      ctx.fillStyle = "#20262d";
+      ctx.strokeStyle = "#6b7680";
+      ctx.lineWidth = 5;
+      roundedRect(geom.cylX - geom.bore / 2 - 20, geom.headY + 2, geom.bore + 40, geom.crankY - geom.headY - 44, 8);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.clearRect(geom.cylX - geom.bore / 2, geom.headY + 42, geom.bore, geom.crankY - geom.headY - 116);
+      ctx.fillStyle = "#11151a";
+      ctx.fillRect(geom.cylX - geom.bore / 2, geom.headY + 42, geom.bore, geom.crankY - geom.headY - 116);
+      ctx.strokeStyle = "#9aa6af";
+      ctx.lineWidth = 4;
+      line(geom.cylX - geom.bore / 2, geom.headY + 42, geom.cylX - geom.bore / 2, geom.crankY - 74);
+      line(geom.cylX + geom.bore / 2, geom.headY + 42, geom.cylX + geom.bore / 2, geom.crankY - 74);
+      ctx.restore();
+
+      drawGas(geom, pistonY, info, time);
+      drawSpark(geom, info, time);
+
+      ctx.save();
+      ctx.strokeStyle = "#3b434c";
+      ctx.lineWidth = 15;
+      ctx.lineCap = "round";
+      line(geom.crankX - 120 * scale, geom.crankY, geom.crankX + 120 * scale, geom.crankY);
+      ctx.strokeStyle = "#8f9aa3";
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.arc(geom.crankX, geom.crankY, geom.crank + 20 * scale, 0, TAU);
+      ctx.stroke();
+
+      ctx.strokeStyle = "#c3cbd1";
+      ctx.lineWidth = 13 * scale;
+      line(geom.crankX, geom.crankY, pinX, pinY);
+      ctx.fillStyle = "#d8e0e6";
+      ctx.beginPath();
+      ctx.arc(geom.crankX, geom.crankY, 18 * scale, 0, TAU);
+      ctx.fill();
+      ctx.fillStyle = "#f0f4f7";
+      ctx.beginPath();
+      ctx.arc(pinX, pinY, 14 * scale, 0, TAU);
+      ctx.fill();
+      ctx.restore();
+
+      ctx.save();
+      ctx.strokeStyle = "#c9d1d7";
+      ctx.lineWidth = 16 * scale;
+      ctx.lineCap = "round";
+      line(wristX, wristY, pinX, pinY);
+      ctx.strokeStyle = "#7e8a94";
+      ctx.lineWidth = 4 * scale;
+      line(wristX, wristY, pinX, pinY);
+      ctx.restore();
+
+      ctx.save();
+      const pistonGradient = ctx.createLinearGradient(
+        geom.cylX - geom.pistonW / 2,
+        pistonY,
+        geom.cylX + geom.pistonW / 2,
+        pistonY
+      );
+      pistonGradient.addColorStop(0, "#88949d");
+      pistonGradient.addColorStop(0.5, "#d6dee4");
+      pistonGradient.addColorStop(1, "#7e8992");
+      ctx.fillStyle = pistonGradient;
+      ctx.strokeStyle = "#f2f6f8";
+      ctx.lineWidth = 2;
+      roundedRect(
+        geom.cylX - geom.pistonW / 2,
+        pistonY - geom.pistonH / 2,
+        geom.pistonW,
+        geom.pistonH,
+        7
+      );
+      ctx.fill();
+      ctx.stroke();
+      ctx.strokeStyle = "#56616b";
+      ctx.lineWidth = 3;
+      for (let i = -1; i <= 1; i++) {
+        line(
+          geom.cylX - geom.pistonW / 2 + 12,
+          pistonY + i * 15 * scale,
+          geom.cylX + geom.pistonW / 2 - 12,
+          pistonY + i * 15 * scale
+        );
+      }
+      ctx.fillStyle = "#59646e";
+      ctx.beginPath();
+      ctx.arc(wristX, wristY, 15 * scale, 0, TAU);
+      ctx.fill();
+      ctx.restore();
+
+      ctx.save();
+      ctx.strokeStyle = "rgba(255,255,255,0.14)";
+      ctx.lineWidth = 1;
+      line(geom.cylX + geom.bore / 2 + 42, geom.topY, geom.cylX + geom.bore / 2 + 42, geom.topY + geom.crank * 2);
+      drawLabel("TDC", geom.cylX + geom.bore / 2 + 72, geom.topY, "#aab4bc", "left");
+      drawLabel("BDC", geom.cylX + geom.bore / 2 + 72, geom.topY + geom.crank * 2, "#aab4bc", "left");
+      ctx.restore();
+
+      ctx.save();
+      const timelineX = 34;
+      const timelineY = h - 74;
+      const timelineW = Math.min(440, w - 68);
+      const blockW = timelineW / 4;
+      STROKES.forEach((stroke, i) => {
+        ctx.fillStyle = i === info.index ? stroke.color : "#29303a";
+        ctx.globalAlpha = i === info.index ? 0.90 : 0.60;
+        roundedRect(timelineX + blockW * i, timelineY, blockW - 4, 18, 3);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        drawLabel(stroke.name.replace("冲程", ""), timelineX + blockW * i + blockW / 2 - 2, timelineY + 36, i === info.index ? stroke.color : "#8f99a2");
+      });
+      ctx.fillStyle = "#fff";
+      ctx.beginPath();
+      ctx.arc(timelineX + blockW * info.index + local * blockW, timelineY + 9, 5, 0, TAU);
+      ctx.fill();
+      ctx.restore();
+
+      drawLabel("气缸", geom.cylX - geom.bore / 2 - 64, geom.headY + 190 * scale, "#b7c0c7", "center");
+      drawLabel("活塞", geom.cylX - geom.bore / 2 - 62, pistonY, "#dce4ea", "center");
+      drawLabel("连杆", (pinX + wristX) / 2 + 56, (pinY + wristY) / 2, "#dce4ea", "left");
+      drawLabel("曲轴", geom.crankX + 120 * scale, geom.crankY + 44 * scale, "#dce4ea", "left");
+
+      if (info.stroke.phase === "compression") {
+        arrow(geom.cylX, pistonY - 68 * scale, geom.cylX, pistonY - 120 * scale, "rgba(137,207,255,0.78)", 4);
+      }
+      if (info.stroke.phase === "power") {
+        arrow(geom.cylX, geom.headY + 92 * scale, geom.cylX, pistonY - 70 * scale, "rgba(255,159,36,0.82)", 5);
+      }
+
+      ctx.restore();
+    }
+
+    function tick(now) {
+      const dt = Math.min(50, now - last);
+      last = now;
+      if (running) {
+        crankAngle += dt * 0.00155 * Number(speed.value) * TAU;
+        crankAngle %= TAU * 2;
+      }
+      drawEngine(now);
+      requestAnimationFrame(tick);
+    }
+
+    requestAnimationFrame(tick);
+  </script>
+</body>
+</html>

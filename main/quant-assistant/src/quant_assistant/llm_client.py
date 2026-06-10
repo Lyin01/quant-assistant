@@ -1,0 +1,96 @@
+from __future__ import annotations
+
+import json
+import os
+import urllib.request
+from pathlib import Path
+from typing import Any
+
+
+def _load_env():
+    try:
+        from dotenv import load_dotenv
+        # Load from project root first, then current working directory
+        project_root = Path(__file__).resolve().parent.parent.parent
+        env_path = project_root / ".env"
+        if env_path.exists():
+            load_dotenv(dotenv_path=str(env_path), override=True)
+        else:
+            load_dotenv(override=True)
+    except Exception:
+        pass
+
+
+def _get_config():
+    _load_env()
+    # Streamlit Cloud stores secrets in st.secrets; fallback to env vars
+    try:
+        import streamlit as st
+        api_key = st.secrets.get("DEEPSEEK_API_KEY", "")
+        base_url = st.secrets.get("DEEPSEEK_BASE_URL", "")
+        model = st.secrets.get("DEEPSEEK_MODEL", "")
+        # Only use st.secrets if the key is actually set (non-empty)
+        if api_key:
+            return {
+                "api_key": api_key,
+                "base_url": base_url or os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+                "model": model or os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
+            }
+        # st.secrets has the key but it's empty - reload .env and use env var
+        # (streamlit clears env vars when accessing empty secrets)
+        _load_env()
+    except Exception:
+        pass
+    return {
+        "api_key": os.getenv("DEEPSEEK_API_KEY", ""),
+        "base_url": os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+        "model": os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
+    }
+
+
+def is_configured() -> bool:
+    cfg = _get_config()
+    return bool(cfg["api_key"])
+
+
+def call_llm(prompt: str, temperature: float = 0.3, max_tokens: int = 1500) -> dict[str, Any]:
+    """Call DeepSeek API with the given prompt.
+
+    Returns {"ok": True, "text": "..."} or {"ok": False, "error": "..."}
+    """
+    cfg = _get_config()
+    if not cfg["api_key"]:
+        return {"ok": False, "error": "DEEPSEEK_API_KEY not configured. Add it to .env file."}
+
+    url = f"{cfg['base_url']}/chat/completions"
+    payload = {
+        "model": cfg["model"],
+        "messages": [
+            {"role": "system", "content": "你是一位理性的量化投资助手。给出直接、具体、可操作的建议。"},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    request = urllib.request.Request(
+        url,
+        data=data,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {cfg['api_key']}",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            text = result["choices"][0]["message"]["content"]
+            return {"ok": True, "text": text, "usage": result.get("usage", {})}
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="ignore")
+        return {"ok": False, "error": f"HTTP {exc.code}: {body}"}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}

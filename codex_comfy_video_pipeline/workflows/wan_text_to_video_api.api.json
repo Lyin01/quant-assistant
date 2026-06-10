@@ -1,0 +1,29 @@
+{
+  "1": {
+    "class_type": "WanTextToVideoApi",
+    "inputs": {
+      "model": "wan2.6-t2v",
+      "prompt": "PROMPT_REPLACED_BY_CODEX",
+      "negative_prompt": "NEGATIVE_PROMPT_REPLACED_BY_CODEX",
+      "size": "720p: 9:16 (720x1280)",
+      "duration": 5,
+      "seed": 1,
+      "generate_audio": false,
+      "prompt_extend": true,
+      "watermark": false,
+      "shot_type": "single"
+    }
+  },
+  "2": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "video": [
+        "1",
+        0
+      ],
+      "filename_prefix": "codex_pipeline/wan",
+      "format": "mp4",
+      "codec": "h264"
+    }
+  }
+}
