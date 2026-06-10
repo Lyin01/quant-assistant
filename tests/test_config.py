@@ -19,3 +19,21 @@ def test_load_json_uses_quant_assistant_fallback(monkeypatch, tmp_path):
     fallback.write_text(json.dumps({"source": "fallback"}), encoding="utf-8")
 
     assert load_json("config.json") == {"source": "fallback"}
+
+
+def test_load_json_returns_empty_dict_for_missing_file(tmp_path):
+    assert load_json(tmp_path / "missing.json") == {}
+
+
+def test_load_json_returns_empty_dict_for_bad_json(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text("{bad json", encoding="utf-8")
+
+    assert load_json(config_path) == {}
+
+
+def test_load_json_returns_empty_dict_for_non_object_json(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps(["not", "an", "object"]), encoding="utf-8")
+
+    assert load_json(config_path) == {}

@@ -7,8 +7,12 @@ from typing import Any
 
 def load_json(path: str | Path) -> dict[str, Any]:
     resolved = _resolve_default_path(path)
-    with resolved.open("r", encoding="utf-8") as file:
-        return json.load(file)
+    try:
+        with resolved.open("r", encoding="utf-8") as file:
+            data = json.load(file)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def save_json(path: str | Path, data: dict[str, Any]) -> None:
