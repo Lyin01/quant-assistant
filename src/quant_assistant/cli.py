@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 from pathlib import Path
 
 from .config import load_json
@@ -51,16 +52,16 @@ def _print_report(
     live: bool,
     no_live: bool = False,
 ) -> None:
-    fund = portfolio["accounts"]["fund"]
-    stock = portfolio["accounts"]["stock"]
+    fund = _account(portfolio, "fund")
+    stock = _account(portfolio, "stock")
     quote_mode = "实时行情" if live else "本地快照"
 
     print("Quant Assistant")
     print(f"数据时间: {portfolio.get('as_of', '-')}")
     print(f"行情模式: {quote_mode}")
     print(_quote_status_line(config, live=live, no_live=no_live))
-    print(f"基金资产: {fund['total_assets']:,.2f}  今日盈亏: {fund['today_pnl']:,.2f}")
-    print(f"股票资产: {stock['total_assets']:,.2f}  可用资金: {stock['available_cash']:,.2f}")
+    print(f"基金资产: {_number(fund.get('total_assets')):,.2f}  今日盈亏: {_number(fund.get('today_pnl')):,.2f}")
+    print(f"股票资产: {_number(stock.get('total_assets')):,.2f}  可用资金: {_number(stock.get('available_cash')):,.2f}")
     if quote_messages:
         print("\n行情源状态:")
         for message in quote_messages:
@@ -79,6 +80,22 @@ def _quote_status_line(config: dict, live: bool, no_live: bool) -> str:
     if not live:
         return f"行情源: {provider_name}; 实时行情未返回，策略按持仓快照判断."
     return quote_status(config)
+
+
+def _account(portfolio: dict, account_key: str) -> dict:
+    accounts = portfolio.get("accounts")
+    if not isinstance(accounts, dict):
+        return {}
+    account = accounts.get(account_key, {})
+    return account if isinstance(account, dict) else {}
+
+
+def _number(value: object) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return number if math.isfinite(number) else 0.0
 
 
 def _validation_exit_code(config: dict, portfolio: dict) -> int:

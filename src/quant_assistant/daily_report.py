@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -26,10 +27,15 @@ def generate_daily_report(
     pipe = run_pipeline(config, portfolio, quotes=quotes, scan_top_n=scan_top_n)
 
     # Extract key numbers
-    fund = portfolio["accounts"]["fund"]
-    stock = portfolio["accounts"]["stock"]
-    total_assets = fund.get("total_assets", 0) + stock.get("total_assets", 0)
-    total_pnl = fund.get("today_pnl", 0) + stock.get("today_pnl", 0)
+    fund = _account(portfolio, "fund")
+    stock = _account(portfolio, "stock")
+    fund_assets = _number(fund.get("total_assets"))
+    stock_assets = _number(stock.get("total_assets"))
+    fund_pnl = _number(fund.get("today_pnl"))
+    stock_pnl = _number(stock.get("today_pnl"))
+    stock_cash = _number(stock.get("available_cash"))
+    total_assets = fund_assets + stock_assets
+    total_pnl = fund_pnl + stock_pnl
 
     # Actionable items
     recs = pipe.decision_report.data.get("recommendations", [])
@@ -45,9 +51,9 @@ def generate_daily_report(
         "summary": {
             "total_assets": round(total_assets, 2),
             "today_pnl": round(total_pnl, 2),
-            "fund_assets": round(fund.get("total_assets", 0), 2),
-            "stock_assets": round(stock.get("total_assets", 0), 2),
-            "stock_cash": round(stock.get("available_cash", 0), 2),
+            "fund_assets": round(fund_assets, 2),
+            "stock_assets": round(stock_assets, 2),
+            "stock_cash": round(stock_cash, 2),
             "actionable_count": len(actionable),
         },
         "今日复盘": {
@@ -60,10 +66,26 @@ def generate_daily_report(
             "数据状态": pipe.data_report.findings,
         },
         "风险提示": pipe.risk_report.findings,
-        "明日计划": _tomorrow_plan(pipe, stock.get("available_cash", 0)),
+        "明日计划": _tomorrow_plan(pipe, stock_cash),
     }
 
     return report
+
+
+def _account(portfolio: dict[str, Any], account_key: str) -> dict[str, Any]:
+    accounts = portfolio.get("accounts")
+    if not isinstance(accounts, dict):
+        return {}
+    account = accounts.get(account_key, {})
+    return account if isinstance(account, dict) else {}
+
+
+def _number(value: Any) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return number if math.isfinite(number) else 0.0
 
 
 def _tomorrow_plan(pipe, cash: float) -> list[str]:

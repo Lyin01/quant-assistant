@@ -1,7 +1,7 @@
 import csv
 from pathlib import Path
 
-from quant_assistant.cli import _quote_status_line, _validation_exit_code, main as cli_main
+from quant_assistant.cli import _print_report, _quote_status_line, _validation_exit_code, main as cli_main
 
 
 def test_quote_status_line_is_explicit_for_no_live_mode():
@@ -39,6 +39,14 @@ def test_quote_status_line_tolerates_bad_market_provider_shape():
 
 def test_validation_exit_code_blocks_invalid_input():
     assert _validation_exit_code({}, {"accounts": {}}) == 2
+
+
+def test_print_report_tolerates_bad_portfolio_account_shapes(capsys):
+    _print_report({}, {"accounts": "bad"}, [], [], live=False, no_live=True)
+
+    output = capsys.readouterr().out
+    assert "Quant Assistant" in output
+    assert "0.00" in output
 
 
 def test_cli_no_live_smoke_does_not_mutate_portfolio_or_write_log(tmp_path, monkeypatch, capsys):
