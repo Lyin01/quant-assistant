@@ -115,9 +115,25 @@ def read_history(history_file: str | Path, limit: int = 50) -> list[dict[str, An
                     record = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                if isinstance(record, dict):
-                    records.append(record)
+                normalized = _normalize_history_record(record)
+                if normalized is not None:
+                    records.append(normalized)
     return list(reversed(records[-limit:]))
+
+
+def _normalize_history_record(record: Any) -> dict[str, Any] | None:
+    if not isinstance(record, dict):
+        return None
+    normalized = dict(record)
+    changes = _safe_delta(record.get("changes"))
+    raw_summary = record.get("changes", {}).get("summary") if isinstance(record.get("changes"), dict) else None
+    normalized["changes"] = {
+        "added": changes["added"],
+        "updated": changes["updated"],
+        "removed": changes["removed"],
+        "summary": raw_summary if isinstance(raw_summary, dict) else {},
+    }
+    return normalized
 
 
 def rollback(history_file: str | Path) -> dict[str, Any] | None:

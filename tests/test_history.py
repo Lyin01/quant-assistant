@@ -168,7 +168,39 @@ def test_read_history_skips_non_object_json_records():
 
         history = read_history(history_file)
 
-        assert history == [{"timestamp": "1", "account": "fund"}]
+        assert history == [
+            {
+                "timestamp": "1",
+                "account": "fund",
+                "changes": {"added": [], "updated": [], "removed": [], "summary": {}},
+            }
+        ]
+
+
+def test_read_history_normalizes_change_shapes_for_display():
+    with TemporaryDirectory() as tmpdir:
+        history_file = Path(tmpdir) / "test_history.jsonl"
+        history_file.write_text(
+            "\n".join(
+                [
+                    json.dumps({"timestamp": "1", "account": "fund", "changes": ["bad"]}, ensure_ascii=False),
+                    json.dumps(
+                        {
+                            "timestamp": "2",
+                            "account": "stock",
+                            "changes": {"added": ["A", 123], "updated": "bad", "summary": ["bad"]},
+                        },
+                        ensure_ascii=False,
+                    ),
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        history = read_history(history_file)
+
+        assert history[0]["changes"] == {"added": ["A", "123"], "updated": [], "removed": [], "summary": {}}
+        assert history[1]["changes"] == {"added": [], "updated": [], "removed": [], "summary": {}}
 
 
 def test_read_history_non_positive_limit_returns_empty_list():
