@@ -29,6 +29,7 @@ def test_llm_advisor_exports_falls_back_when_local_advice_symbol_missing(monkeyp
     exports = compat.load_llm_advisor_exports()
 
     assert exports.import_error == ""
+    assert 'DEEPSEEK_API_KEY = "sk-test"' in exports.build_deepseek_secrets_toml("sk-test")
     assert exports.build_llm_prompt(
         portfolio={},
         actionable_recommendations=[],
@@ -65,6 +66,7 @@ def test_llm_advisor_exports_keep_booting_when_module_import_fails(monkeypatch):
     exports = compat.load_llm_advisor_exports()
 
     assert "simulated stale cloud module" in exports.import_error
+    assert 'DEEPSEEK_API_KEY = "sk-test"' in exports.build_deepseek_secrets_toml("sk-test")
     settings = exports.load_deepseek_settings(".")
     assert settings.configured is False
     diag = exports.diagnose_config(".")

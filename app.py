@@ -71,6 +71,7 @@ from quant_assistant.strategy import generate_recommendations
 
 
 llm_advisor = load_llm_advisor_exports()
+build_deepseek_secrets_toml = llm_advisor.build_deepseek_secrets_toml
 build_llm_prompt = llm_advisor.build_llm_prompt
 build_local_rule_advice = llm_advisor.build_local_rule_advice
 diagnose_config = llm_advisor.diagnose_config
@@ -342,6 +343,10 @@ if page == "总览":
             DEEPSEEK_API_KEY = "你的API密钥"
             ```
             """)
+
+            st.markdown("**Streamlit Cloud Secrets 正确 TOML 示例：**")
+            st.code(build_deepseek_secrets_toml("你的新API密钥"), language="toml")
+            st.caption("Secrets 里等号右侧的 API Key 必须放在英文双引号内；如果 key 已经截图或发给别人，请先删除旧 key 再生成新 key。")
 
         if st.session_state.get("deepseek_advice_error"):
             st.error(st.session_state["deepseek_advice_error"])

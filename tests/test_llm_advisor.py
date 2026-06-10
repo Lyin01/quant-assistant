@@ -4,6 +4,7 @@ import types
 from pathlib import Path
 
 from quant_assistant.llm_advisor import (
+    build_deepseek_secrets_toml,
     build_llm_context,
     build_llm_prompt,
     build_local_rule_advice,
@@ -54,6 +55,15 @@ def test_load_deepseek_settings_prefers_environment(monkeypatch, tmp_path):
     assert settings.api_key == "env-key"
     assert settings.base_url == "https://env.example.com"
     assert settings.model == "env-model"
+
+
+def test_build_deepseek_secrets_toml_quotes_string_values():
+    snippet = build_deepseek_secrets_toml("sk-test", model="deepseek-chat")
+
+    assert 'DEEPSEEK_API_KEY = "sk-test"' in snippet
+    assert 'DEEPSEEK_BASE_URL = "https://api.deepseek.com"' in snippet
+    assert 'DEEPSEEK_MODEL = "deepseek-chat"' in snippet
+    assert "DEEPSEEK_API_KEY=sk-test" not in snippet
 
 
 def test_build_llm_prompt_contains_core_sections():

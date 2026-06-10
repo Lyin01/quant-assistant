@@ -51,6 +51,21 @@ def load_deepseek_settings(project_root: str | Path) -> DeepSeekSettings:
     )
 
 
+def build_deepseek_secrets_toml(
+    api_key_placeholder: str = "your-new-deepseek-api-key",
+    model: str = DEFAULT_DEEPSEEK_MODEL,
+    base_url: str = DEFAULT_DEEPSEEK_BASE_URL,
+) -> str:
+    """Return a valid Streamlit Secrets TOML snippet for DeepSeek config."""
+    return "\n".join(
+        [
+            f'DEEPSEEK_API_KEY = "{api_key_placeholder}"',
+            f'DEEPSEEK_BASE_URL = "{base_url.rstrip("/")}"',
+            f'DEEPSEEK_MODEL = "{model}"',
+        ]
+    )
+
+
 def build_llm_context(
     config: dict[str, Any],
     portfolio: dict[str, Any],

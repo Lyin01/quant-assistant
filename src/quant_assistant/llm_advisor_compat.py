@@ -21,6 +21,7 @@ class FallbackDeepSeekSettings:
 
 @dataclass(frozen=True)
 class LLMAdvisorExports:
+    build_deepseek_secrets_toml: Callable[..., str]
     build_llm_prompt: Callable[..., str]
     build_local_rule_advice: Callable[..., str]
     diagnose_config: Callable[..., dict[str, Any]]
@@ -35,6 +36,7 @@ def load_llm_advisor_exports() -> LLMAdvisorExports:
     except Exception as exc:
         error = f"{type(exc).__name__}: {exc}"
         return LLMAdvisorExports(
+            build_deepseek_secrets_toml=_fallback_build_deepseek_secrets_toml,
             build_llm_prompt=_fallback_build_llm_prompt,
             build_local_rule_advice=_fallback_build_local_rule_advice,
             diagnose_config=_fallback_diagnose_config(error),
@@ -44,11 +46,26 @@ def load_llm_advisor_exports() -> LLMAdvisorExports:
         )
 
     return LLMAdvisorExports(
+        build_deepseek_secrets_toml=getattr(module, "build_deepseek_secrets_toml", _fallback_build_deepseek_secrets_toml),
         build_llm_prompt=getattr(module, "build_llm_prompt", _fallback_build_llm_prompt),
         build_local_rule_advice=getattr(module, "build_local_rule_advice", _fallback_build_local_rule_advice),
         diagnose_config=getattr(module, "diagnose_config", _fallback_diagnose_config("")),
         load_deepseek_settings=getattr(module, "load_deepseek_settings", _fallback_load_deepseek_settings),
         request_deepseek_advice=getattr(module, "request_deepseek_advice", _fallback_request_deepseek_advice("")),
+    )
+
+
+def _fallback_build_deepseek_secrets_toml(
+    api_key_placeholder: str = "your-new-deepseek-api-key",
+    model: str = "deepseek-v4-pro",
+    base_url: str = "https://api.deepseek.com",
+) -> str:
+    return "\n".join(
+        [
+            f'DEEPSEEK_API_KEY = "{api_key_placeholder}"',
+            f'DEEPSEEK_BASE_URL = "{base_url.rstrip("/")}"',
+            f'DEEPSEEK_MODEL = "{model}"',
+        ]
     )
 
 
